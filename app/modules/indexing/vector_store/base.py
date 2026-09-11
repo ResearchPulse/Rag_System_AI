@@ -17,7 +17,7 @@ class VectorSearchResult(BaseModel):
 
 
 class BaseVectorStore(ABC):
-    """Abstract interface for Step 6: Vector Database (Qdrant, PgVector, Milvus, Chroma)."""
+    """Abstract interface for Step 6: Vector Database (PostgreSQL / pgvector)."""
     @abstractmethod
     async def upsert(self, collection_name: str, records: List[VectorRecord]) -> bool:
         pass
