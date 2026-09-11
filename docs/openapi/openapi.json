@@ -1,0 +1,1354 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Rag_System_AI - Modular Monolith",
+    "description": "Scientific Journal Publication Trend Tracking System.\n\nUnified Modular Monolith RAG Pipeline covering all 12 Steps across 4 Phases:\n- Phase 1: Ingestion (Steps 1-4: Data Sources, Loading, Meaningful Chunking, Metadata Extraction)\n- Phase 2: Indexing (Steps 5-6: Embeddings, Vector Database)\n- Phase 3: Retrieval (Steps 7-9: Query Rewriting, Hybrid Search, Cross-Encoder Reranking)\n- Phase 4: Generation & Evaluation (Steps 10-12: Context Assembly, LLM Generation, Evaluation)",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Application Health Check",
+        "description": "Returns service health status and environment.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthCheckResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Root Welcome & Sitemap",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents": {
+      "post": {
+        "tags": [
+          "Phase 1: Ingestion"
+        ],
+        "summary": "Upload and chunk scholarly document",
+        "description": "Accepts document text, splits it into semantic chunks, and extracts initial metadata.",
+        "operationId": "upload_document_api_v1_documents_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}": {
+      "get": {
+        "tags": [
+          "Phase 1: Ingestion"
+        ],
+        "summary": "Get document details and chunks",
+        "description": "Retrieves document metadata, processing status, and text chunks.",
+        "operationId": "get_document_api_v1_documents__document_id__get",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Unique document ID",
+              "examples": [
+                "doc_998877"
+              ],
+              "title": "Document Id"
+            },
+            "description": "Unique document ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/embeddings": {
+      "post": {
+        "tags": [
+          "Phase 2: Indexing & Embeddings"
+        ],
+        "summary": "Generate vector embeddings",
+        "description": "Transforms text chunks into dense floating point embedding vectors.",
+        "operationId": "create_embeddings_api_v1_embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmbeddingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbeddingResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/retrieve": {
+      "post": {
+        "tags": [
+          "Phase 3: Retrieval & Reranking"
+        ],
+        "summary": "Retrieve relevant context passages",
+        "description": "Performs semantic vector lookup, hybrid search, and cross-encoder reranking.",
+        "operationId": "retrieve_contexts_api_v1_retrieve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/generate": {
+      "post": {
+        "tags": [
+          "Phase 4: Generation & Evaluation"
+        ],
+        "summary": "Generate grounded answer from context",
+        "description": "Synthesizes a citation-grounded response using an LLM conditioned on assembled context.",
+        "operationId": "generate_response_api_v1_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat": {
+      "post": {
+        "tags": [
+          "End-to-End RAG Pipeline"
+        ],
+        "summary": "Chat with RAG pipeline",
+        "description": "Unified entry point. Coordinates retrieval, hybrid search, reranking, context assembly, and LLM generation in-process.",
+        "operationId": "chat_pipeline_api_v1_chat_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagPipelineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagPipelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ContextItem": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "examples": [
+              "chk_pub_01"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "examples": [
+              "RAG combines neural retrieval with generative language models."
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source",
+            "examples": [
+              "State of Scientific AI Publications 2026"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ContextItem"
+      },
+      "DocumentChunk": {
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id",
+            "description": "Unique chunk identifier",
+            "examples": [
+              "chk_102030"
+            ]
+          },
+          "chunk_index": {
+            "type": "integer",
+            "title": "Chunk Index",
+            "description": "Sequential index of the chunk",
+            "examples": [
+              0
+            ]
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Textual body of chunk",
+            "examples": [
+              "Overview of scientometric methods."
+            ]
+          },
+          "character_count": {
+            "type": "integer",
+            "title": "Character Count",
+            "description": "Length of chunk in characters",
+            "examples": [
+              33
+            ]
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "description": "Metadata associated with chunk"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_id",
+          "chunk_index",
+          "content",
+          "character_count"
+        ],
+        "title": "DocumentChunk",
+        "description": "Schema representing an individual text chunk from an ingested document."
+      },
+      "DocumentDetailResponse": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "title": "Document Id",
+            "examples": [
+              "doc_998877"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "examples": [
+              "Scientometrics_Review_2026.pdf"
+            ]
+          },
+          "file_type": {
+            "type": "string",
+            "title": "File Type",
+            "examples": [
+              "pdf"
+            ]
+          },
+          "total_chunks": {
+            "type": "integer",
+            "title": "Total Chunks",
+            "examples": [
+              4
+            ]
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "examples": [
+              "processed"
+            ]
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          },
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentChunk"
+            },
+            "type": "array",
+            "title": "Chunks"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "title",
+          "file_type",
+          "total_chunks",
+          "status"
+        ],
+        "title": "DocumentDetailResponse",
+        "description": "Details and chunks of a stored document."
+      },
+      "DocumentUploadRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Title or file name",
+            "examples": [
+              "Scientometrics_Review_2026.pdf"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Raw text content to be chunked",
+            "examples": [
+              "Full paper text body..."
+            ]
+          },
+          "file_type": {
+            "type": "string",
+            "title": "File Type",
+            "description": "File extension/type",
+            "default": "txt",
+            "examples": [
+              "pdf"
+            ]
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata",
+            "description": "Metadata tags, author, year",
+            "examples": [
+              {
+                "authors": [
+                  "Nguyen Van A"
+                ],
+                "year": 2026
+              }
+            ]
+          },
+          "chunk_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Size",
+            "description": "Target chunk character size",
+            "default": 500,
+            "examples": [
+              500
+            ]
+          },
+          "chunk_overlap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chunk Overlap",
+            "description": "Chunk overlap character size",
+            "default": 50,
+            "examples": [
+              50
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "content"
+        ],
+        "title": "DocumentUploadRequest",
+        "description": "Request schema for uploading and processing a document."
+      },
+      "DocumentUploadResponse": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "title": "Document Id",
+            "description": "Generated document ID",
+            "examples": [
+              "doc_998877"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "description": "Title of document",
+            "examples": [
+              "Scientometrics_Review_2026.pdf"
+            ]
+          },
+          "total_chunks": {
+            "type": "integer",
+            "title": "Total Chunks",
+            "description": "Count of chunks generated",
+            "examples": [
+              4
+            ]
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "processed",
+            "examples": [
+              "processed"
+            ]
+          },
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentChunk"
+            },
+            "type": "array",
+            "title": "Chunks"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "title",
+          "total_chunks"
+        ],
+        "title": "DocumentUploadResponse",
+        "description": "Response returned after a document has been accepted and chunked."
+      },
+      "EmbeddingRequest": {
+        "properties": {
+          "texts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Texts",
+            "description": "List of text chunks to convert into dense vector embeddings",
+            "examples": [
+              [
+                "Scholarly trend tracking in AI",
+                "Modular Monolith RAG architecture"
+              ]
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Model override",
+            "examples": [
+              "text-embedding-3-small"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "texts"
+        ],
+        "title": "EmbeddingRequest",
+        "description": "Request schema for generating vector embeddings."
+      },
+      "EmbeddingResponse": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "examples": [
+              "text-embedding-3-small"
+            ]
+          },
+          "dimension": {
+            "type": "integer",
+            "title": "Dimension",
+            "examples": [
+              1536
+            ]
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/EmbeddingVectorItem"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/EmbeddingUsage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "dimension",
+          "usage"
+        ],
+        "title": "EmbeddingResponse"
+      },
+      "EmbeddingUsage": {
+        "properties": {
+          "prompt_tokens": {
+            "type": "integer",
+            "title": "Prompt Tokens",
+            "examples": [
+              18
+            ]
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens",
+            "examples": [
+              18
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt_tokens",
+          "total_tokens"
+        ],
+        "title": "EmbeddingUsage"
+      },
+      "EmbeddingVectorItem": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index",
+            "examples": [
+              0
+            ]
+          },
+          "vector": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Vector"
+          },
+          "dimension": {
+            "type": "integer",
+            "title": "Dimension",
+            "examples": [
+              1536
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "vector",
+          "dimension"
+        ],
+        "title": "EmbeddingVectorItem",
+        "description": "Individual vector output item."
+      },
+      "GenerationRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Query",
+            "description": "The research question to answer",
+            "examples": [
+              "What are recent publication trends in generative AI models?"
+            ]
+          },
+          "contexts": {
+            "items": {
+              "$ref": "#/components/schemas/ContextItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Contexts",
+            "description": "Context passages to ground the response"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "examples": [
+              "gpt-4o-mini"
+            ]
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature",
+            "default": 0.7,
+            "examples": [
+              0.7
+            ]
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4096.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens",
+            "default": 1024,
+            "examples": [
+              1024
+            ]
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "contexts"
+        ],
+        "title": "GenerationRequest",
+        "description": "Request schema for generating grounded LLM responses."
+      },
+      "GenerationResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query",
+            "examples": [
+              "What are recent publication trends in generative AI models?"
+            ]
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "examples": [
+              "gpt-4o-mini"
+            ]
+          },
+          "contexts_used": {
+            "type": "integer",
+            "title": "Contexts Used",
+            "examples": [
+              2
+            ]
+          },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Citations"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/GenerationUsage"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms",
+            "examples": [
+              280.5
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "answer",
+          "model",
+          "contexts_used",
+          "usage",
+          "latency_ms"
+        ],
+        "title": "GenerationResponse"
+      },
+      "GenerationUsage": {
+        "properties": {
+          "prompt_tokens": {
+            "type": "integer",
+            "title": "Prompt Tokens",
+            "examples": [
+              165
+            ]
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "title": "Completion Tokens",
+            "examples": [
+              82
+            ]
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens",
+            "examples": [
+              247
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens"
+        ],
+        "title": "GenerationUsage"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthCheckResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "healthy",
+            "examples": [
+              "healthy"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": "0.1.0",
+            "examples": [
+              "0.1.0"
+            ]
+          },
+          "environment": {
+            "type": "string",
+            "title": "Environment",
+            "default": "development",
+            "examples": [
+              "development"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "title": "HealthCheckResponse",
+        "description": "Standard system health status response."
+      },
+      "RagPipelineRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Query",
+            "description": "User research prompt",
+            "examples": [
+              "Xu hướng công bố bài báo khoa học về RAG trong năm 2025-2026 là gì?"
+            ]
+          },
+          "top_k": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top K",
+            "default": 5,
+            "examples": [
+              5
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "examples": [
+              "gpt-4o-mini"
+            ]
+          },
+          "include_contexts": {
+            "type": "boolean",
+            "title": "Include Contexts",
+            "default": true,
+            "examples": [
+              true
+            ]
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature",
+            "default": 0.7,
+            "examples": [
+              0.7
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "RagPipelineRequest",
+        "description": "End-to-End Chat / RAG query request for the entire pipeline."
+      },
+      "RagPipelineResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "contexts": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contexts"
+          },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Citations"
+          },
+          "latency_breakdown": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Latency Breakdown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "answer",
+          "model"
+        ],
+        "title": "RagPipelineResponse",
+        "description": "End-to-End unified response with grounded answer, citations, and metrics."
+      },
+      "RetrievalFilter": {
+        "properties": {
+          "document_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Ids",
+            "examples": [
+              [
+                "doc_998877"
+              ]
+            ]
+          },
+          "categories": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categories",
+            "examples": [
+              [
+                "AI",
+                "Scientometrics"
+              ]
+            ]
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "title": "RetrievalFilter"
+      },
+      "RetrievalRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Query",
+            "description": "Search query to retrieve context for",
+            "examples": [
+              "What are recent publication trends in generative AI models?"
+            ]
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "default": 5,
+            "examples": [
+              5
+            ]
+          },
+          "score_threshold": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Threshold",
+            "default": 0.5,
+            "examples": [
+              0.5
+            ]
+          },
+          "rerank": {
+            "type": "boolean",
+            "title": "Rerank",
+            "default": true,
+            "examples": [
+              true
+            ]
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RetrievalFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "RetrievalRequest",
+        "description": "Request schema for top-k contextual retrieval."
+      },
+      "RetrievalResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query",
+            "examples": [
+              "What are recent publication trends in generative AI models?"
+            ]
+          },
+          "total_found": {
+            "type": "integer",
+            "title": "Total Found",
+            "examples": [
+              2
+            ]
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/RetrievedChunk"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms",
+            "examples": [
+              12.4
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "total_found",
+          "latency_ms"
+        ],
+        "title": "RetrievalResponse"
+      },
+      "RetrievedChunk": {
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "title": "Chunk Id",
+            "examples": [
+              "chk_102030"
+            ]
+          },
+          "document_id": {
+            "type": "string",
+            "title": "Document Id",
+            "examples": [
+              "doc_998877"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "examples": [
+              "Generative AI papers grew significantly across scholarly domains."
+            ]
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "examples": [
+              0.91
+            ]
+          },
+          "rerank_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rerank Score",
+            "examples": [
+              0.95
+            ]
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_id",
+          "document_id",
+          "content",
+          "score"
+        ],
+        "title": "RetrievedChunk"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

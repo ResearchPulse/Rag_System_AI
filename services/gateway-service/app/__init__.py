@@ -1,1 +1,0 @@
-"""Gateway Service Application Package."""
