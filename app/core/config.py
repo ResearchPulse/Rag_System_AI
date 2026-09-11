@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # Phase 2: Indexing (PgVector & Neo4j Graph DB)
     EMBEDDING_MODEL: str = "text-embedding-3-small"
-    EMBEDDING_DIMENSION: int = 1536
+    EMBEDDING_DIMENSION: int = 768
     VECTOR_DB_TYPE: str = "pgvector"
 
     # PostgreSQL / pgvector Storage (managed via pgAdmin)
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     # Neo4j Knowledge Graph Storage
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: str = "neo4j123"
+    NEO4J_PASSWORD: str = "12345678"
     NEO4J_DATABASE: str = "neo4j"
 
     # Phase 3: Retrieval
