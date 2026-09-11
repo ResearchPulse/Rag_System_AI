@@ -49,3 +49,6 @@ logs/
 
 # Docker
 .docker/
+
+# External Tools / Cloned repos
+tool-crawl-scimago/
