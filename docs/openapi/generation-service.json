@@ -1,0 +1,411 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Generation Service - Rag_System_AI",
+    "description": "Microservice for LLM answer synthesis, prompt formatting, and citation generation.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "description": "Returns the operational status of the Generation Service.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/generate": {
+      "post": {
+        "tags": [
+          "Generation"
+        ],
+        "summary": "Generate answer from context",
+        "description": "Synthesizes a response to a user query grounded strictly in provided context passages using an LLM.",
+        "operationId": "generate_response_api_v1_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Grounded answer synthesized successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing query or context chunks"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ContextItem": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id",
+            "description": "Identifier of the context chunk",
+            "examples": [
+              "chk_001"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Context passage content",
+            "examples": [
+              "RAG systems combine neural retrieval with generative language models."
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source",
+            "description": "Document source or reference title",
+            "examples": [
+              "State of Scientific AI Publications 2026"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ContextItem",
+        "description": "Schema representing an individual context fragment passed to the LLM."
+      },
+      "GenerationRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Query",
+            "description": "The original user query or research question",
+            "examples": [
+              "What are the recent trends in transformer models for scientific literature?"
+            ]
+          },
+          "contexts": {
+            "items": {
+              "$ref": "#/components/schemas/ContextItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Contexts",
+            "description": "List of context chunks to ground the model response"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "Target LLM model (e.g., gpt-4o-mini, llama3, mistral)",
+            "examples": [
+              "gpt-4o-mini"
+            ]
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature",
+            "description": "Sampling temperature",
+            "default": 0.7,
+            "examples": [
+              0.7
+            ]
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4096.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens",
+            "description": "Maximum completion tokens",
+            "default": 1024,
+            "examples": [
+              1024
+            ]
+          },
+          "system_prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt",
+            "description": "Custom system instruction to guide answer style",
+            "examples": [
+              "You are an expert scientific literature assistant. Ground your answer strictly on provided contexts."
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "contexts"
+        ],
+        "title": "GenerationRequest",
+        "description": "Request schema for generating an answer from retrieved context."
+      },
+      "GenerationResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query",
+            "description": "Original query",
+            "examples": [
+              "What are the recent trends in transformer models for scientific literature?"
+            ]
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer",
+            "description": "Synthesized response from the LLM",
+            "examples": [
+              "Based on recent publications, transformer models focus on RAG optimization..."
+            ]
+          },
+          "model": {
+            "type": "string",
+            "title": "Model",
+            "description": "Model used for generation",
+            "examples": [
+              "gpt-4o-mini"
+            ]
+          },
+          "contexts_used": {
+            "type": "integer",
+            "title": "Contexts Used",
+            "description": "Number of context chunks incorporated",
+            "examples": [
+              2
+            ]
+          },
+          "citations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Citations",
+            "description": "Extracted citations or source references"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/GenerationUsage",
+            "description": "Detailed token consumption statistics"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms",
+            "description": "Generation latency in milliseconds",
+            "examples": [
+              320.4
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "answer",
+          "model",
+          "contexts_used",
+          "usage",
+          "latency_ms"
+        ],
+        "title": "GenerationResponse",
+        "description": "Response schema containing the synthesized answer and metadata."
+      },
+      "GenerationUsage": {
+        "properties": {
+          "prompt_tokens": {
+            "type": "integer",
+            "title": "Prompt Tokens",
+            "description": "Tokens consumed by prompt and context",
+            "examples": [
+              185
+            ]
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "title": "Completion Tokens",
+            "description": "Tokens generated in response",
+            "examples": [
+              88
+            ]
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens",
+            "description": "Total tokens utilized",
+            "examples": [
+              273
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt_tokens",
+          "completion_tokens",
+          "total_tokens"
+        ],
+        "title": "GenerationUsage",
+        "description": "Token usage metrics for LLM generation."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "service": {
+            "type": "string",
+            "title": "Service",
+            "example": "generation-service"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "healthy",
+            "example": "healthy"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "default": "0.1.0",
+            "example": "0.1.0"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "service"
+        ],
+        "title": "HealthResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

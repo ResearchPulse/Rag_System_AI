@@ -1,0 +1,115 @@
+version: "3.8"
+
+services:
+  ingestion-service:
+    build:
+      context: .
+      dockerfile: services/ingestion-service/Dockerfile
+    container_name: rag-ingestion-service
+    ports:
+      - "8001:8001"
+    environment:
+      - SERVICE_NAME=ingestion-service
+      - APP_ENV=production
+      - DEBUG=false
+      - PORT=8001
+      - HOST=0.0.0.0
+      - LOG_LEVEL=INFO
+    networks:
+      - rag-network
+    restart: unless-stopped
+
+  embedding-service:
+    build:
+      context: .
+      dockerfile: services/embedding-service/Dockerfile
+    container_name: rag-embedding-service
+    ports:
+      - "8002:8002"
+    environment:
+      - SERVICE_NAME=embedding-service
+      - APP_ENV=production
+      - DEBUG=false
+      - PORT=8002
+      - HOST=0.0.0.0
+      - LOG_LEVEL=INFO
+      - DEFAULT_MODEL=text-embedding-3-small
+      - EMBEDDING_DIMENSION=1536
+    networks:
+      - rag-network
+    restart: unless-stopped
+
+  retrieval-service:
+    build:
+      context: .
+      dockerfile: services/retrieval-service/Dockerfile
+    container_name: rag-retrieval-service
+    ports:
+      - "8003:8003"
+    environment:
+      - SERVICE_NAME=retrieval-service
+      - APP_ENV=production
+      - DEBUG=false
+      - PORT=8003
+      - HOST=0.0.0.0
+      - LOG_LEVEL=INFO
+      - EMBEDDING_SERVICE_URL=http://embedding-service:8002
+      - DEFAULT_TOP_K=5
+      - DEFAULT_SCORE_THRESHOLD=0.5
+    depends_on:
+      - embedding-service
+    networks:
+      - rag-network
+    restart: unless-stopped
+
+  generation-service:
+    build:
+      context: .
+      dockerfile: services/generation-service/Dockerfile
+    container_name: rag-generation-service
+    ports:
+      - "8004:8004"
+    environment:
+      - SERVICE_NAME=generation-service
+      - APP_ENV=production
+      - DEBUG=false
+      - PORT=8004
+      - HOST=0.0.0.0
+      - LOG_LEVEL=INFO
+      - LLM_PROVIDER=mock
+      - LLM_MODEL=gpt-4o-mini
+    networks:
+      - rag-network
+    restart: unless-stopped
+
+  gateway-service:
+    build:
+      context: .
+      dockerfile: services/gateway-service/Dockerfile
+    container_name: rag-gateway-service
+    ports:
+      - "8005:8005"
+    environment:
+      - SERVICE_NAME=gateway-service
+      - APP_ENV=production
+      - DEBUG=false
+      - PORT=8005
+      - HOST=0.0.0.0
+      - LOG_LEVEL=INFO
+      - INGESTION_SERVICE_URL=http://ingestion-service:8001
+      - EMBEDDING_SERVICE_URL=http://embedding-service:8002
+      - RETRIEVAL_SERVICE_URL=http://retrieval-service:8003
+      - GENERATION_SERVICE_URL=http://generation-service:8004
+      - REQUEST_TIMEOUT_SECONDS=30
+    depends_on:
+      - ingestion-service
+      - embedding-service
+      - retrieval-service
+      - generation-service
+    networks:
+      - rag-network
+    restart: unless-stopped
+
+networks:
+  rag-network:
+    driver: bridge
