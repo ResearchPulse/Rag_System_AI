@@ -21,12 +21,25 @@ class Settings(BaseSettings):
     DEFAULT_CHUNK_SIZE: int = 500
     DEFAULT_CHUNK_OVERLAP: int = 50
 
-    # Phase 2: Indexing & Vector DB
+    # Phase 2: Indexing (PgVector & Neo4j Graph DB)
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIMENSION: int = 1536
-    VECTOR_DB_TYPE: str = "qdrant"
-    VECTOR_DB_HOST: str = "localhost"
-    VECTOR_DB_PORT: int = 6333
+    VECTOR_DB_TYPE: str = "pgvector"
+
+    # PostgreSQL / pgvector Storage (managed via pgAdmin)
+    POSTGRES_HOST: str = "100.121.61.95"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_DB: str = "researchpulse"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "postgres123"
+    POSTGRES_SCHEMA: str = "public"
+    POSTGRES_URL: Optional[str] = None
+
+    # Neo4j Knowledge Graph Storage
+    NEO4J_URI: str = "bolt://100.121.61.95:7687"
+    NEO4J_USER: str = "neo4j"
+    NEO4J_PASSWORD: str = "neo4j123"
+    NEO4J_DATABASE: str = "neo4j"
 
     # Phase 3: Retrieval
     DEFAULT_TOP_K: int = 5

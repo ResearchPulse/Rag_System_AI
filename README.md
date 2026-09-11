@@ -59,7 +59,7 @@ Rag_System_AI/
 ├── tests/
 │   └── test_api.py                 # Bộ kiểm thử tích hợp (Unit & Integration tests)
 ├── Dockerfile                      # Single-stage container image
-├── docker-compose.yml              # Triển khai app + Vector DB (Qdrant)
+├── docker-compose.yml              # Triển khai app kết nối Postgres (pgvector) & Neo4j
 ├── pyproject.toml                  # Quản lý dependency tập trung qua Poetry
 ├── .env.example                    # Biến môi trường mẫu
 ├── .env                            # Biến môi trường local
@@ -132,10 +132,10 @@ Toàn bộ hệ thống được expose tập trung tại một cổng duy nhấ
 ## 4. Hướng dẫn khởi chạy
 
 ### Cách 1: Chạy bằng Docker Compose (Khuyến nghị)
-Bao gồm ứng dụng Modular Monolith và cơ sở dữ liệu Vector Qdrant:
+Bao gồm ứng dụng Modular Monolith kết nối cơ sở dữ liệu Vector (Postgres/pgvector qua pgAdmin) và Knowledge Graph (Neo4j):
 
 ```bash
-# Khởi chạy ứng dụng và Vector DB
+# Khởi chạy ứng dụng
 docker-compose up --build
 
 # Hoặc chạy nền:
@@ -143,7 +143,8 @@ docker-compose up -d --build
 ```
 Truy cập:
 - RAG Application: [http://localhost:8000/docs](http://localhost:8000/docs)
-- Qdrant Vector DB Web Dashboard: [http://localhost:6333/dashboard](http://localhost:6333/dashboard)
+- pgAdmin / PostgreSQL: [http://localhost:5050](http://localhost:5050) (hoặc host 100.121.61.95:5432)
+- Neo4j Browser: [http://100.121.61.95:7474](http://100.121.61.95:7474) (bolt://100.121.61.95:7687)
 
 Dừng hệ thống:
 ```bash
