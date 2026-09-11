@@ -1,1 +1,0 @@
-"""Ingestion Service Application Package."""

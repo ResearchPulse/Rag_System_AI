@@ -1,75 +1,105 @@
 # Rag_System_AI — Scientific Journal Publication Trend Tracking RAG System
 
-Hệ thống RAG (Retrieval-Augmented Generation) phục vụ theo dõi và phân tích xu hướng công bố các bài báo khoa học. Dự án được thiết kế theo kiến trúc **Monorepo Microservices**, trong đó mỗi microservice là một ứng dụng FastAPI độc lập, quản lý dependency bằng Poetry, có thể chạy riêng lẻ bằng `uvicorn` hoặc triển khai đồng bộ qua Docker Compose.
+Hệ thống RAG (Retrieval-Augmented Generation) phục vụ theo dõi và phân tích xu hướng công bố các bài báo khoa học. Dự án được xây dựng theo kiến trúc **Modular Monolith** (Đơn khối dạng mô-đun), kết hợp ưu điểm của việc triển khai đơn giản, hiệu năng cao (không tốn độ trễ mạng giữa các service nội bộ) cùng tính phân tách ranh giới module rõ ràng, sẵn sàng mở rộng.
 
 ---
 
-## 1. Kiến trúc tổng thể
+## 1. Kiến trúc Modular Monolith
 
 ```
 Rag_System_AI/
-├── services/
-│   ├── ingestion-service/      # Port 8001: Nhận upload tài liệu, chunking, lưu metadata
-│   ├── embedding-service/      # Port 8002: Chuyển text chunks thành dense vector embeddings
-│   ├── retrieval-service/      # Port 8003: Tìm kiếm vector tương đồng, rerank top-k context
-│   ├── generation-service/     # Port 8004: Gọi LLM sinh câu trả lời có trích dẫn context
-│   └── gateway-service/        # Port 8005: API Gateway duy nhất expose cho client
-├── shared/
-│   ├── schemas/                # Pydantic schemas dùng chung giữa các service
-│   └── utils/                  # Utility & Logger dùng chung
+├── app/
+│   ├── main.py                     # Entry point FastAPI duy nhất (Port 8000)
+│   ├── api/
+│   │   ├── deps.py                 # Dependency Injection cung cấp services
+│   │   └── v1/
+│   │       ├── router.py           # Gom tất cả router v1
+│   │       └── endpoints/          # Endpoints theo từng giai đoạn RAG
+│   │           ├── ingestion.py    # POST /api/v1/documents
+│   │           ├── embedding.py    # POST /api/v1/embeddings
+│   │           ├── retrieval.py    # POST /api/v1/retrieve
+│   │           ├── generation.py   # POST /api/v1/generate
+│   │           └── rag.py          # POST /api/v1/chat (End-to-End Pipeline)
+│   ├── core/
+│   │   ├── config.py               # Quản lý cấu hình qua pydantic-settings
+│   │   └── logger.py               # Structured logging
+│   ├── modules/                    # 4 Giai đoạn cốt lõi (12 bước RAG)
+│   │   ├── ingestion/              # [Phase 1: Ingestion]
+│   │   │   ├── data_sources/       # Step 1: Data Sources (PDF, API, Web, Transcripts)
+│   │   │   ├── loaders/            # Step 2: Document Loading
+│   │   │   ├── chunking/           # Step 3: Meaningful Chunking
+│   │   │   ├── metadata/           # Step 4: Metadata Extraction
+│   │   │   ├── schemas.py
+│   │   │   └── service.py
+│   │   ├── indexing/               # [Phase 2: Indexing]
+│   │   │   ├── embedders/          # Step 5: Embeddings
+│   │   │   ├── vector_store/       # Step 6: Vector Database
+│   │   │   ├── schemas.py
+│   │   │   └── service.py
+│   │   ├── retrieval/              # [Phase 3: Retrieval]
+│   │   │   ├── query_rewriting/    # Step 7: Query Rewriting
+│   │   │   ├── hybrid_search/      # Step 8: Hybrid Search (Dense + Sparse BM25)
+│   │   │   ├── reranking/          # Step 9: Cross-Encoder Reranking
+│   │   │   ├── schemas.py
+│   │   │   └── service.py
+│   │   └── generation/             # [Phase 4: Generation & Evaluation]
+│   │       ├── context_assembly/   # Step 10: Context Assembly
+│   │       ├── llm/                # Step 11: LLM Generation
+│   │       ├── evaluation/         # Step 12: Evaluation (Faithfulness, Cost, Citations)
+│   │       ├── schemas.py
+│   │       └── service.py
+│   └── shared/                     # Shared models & Pipeline definitions
+│       ├── schemas.py              # BaseResponse, ErrorResponse, HealthCheck
+│       └── pipeline.py             # Định nghĩa chi tiết 12 bước (rag_steps)
+├── scripts/
+│   └── export_openapi.py           # Xuất hợp đồng openapi.json
 ├── docs/
-│   └── openapi/                # Lưu file OpenAPI JSON contracts đã trích xuất
-├── docker-compose.yml          # Điều phối 5 services trên dải port 8001-8005
+│   └── openapi/
+│       └── openapi.json            # File đặc tả OpenAPI JSON hợp nhất
+├── tests/
+│   └── test_api.py                 # Bộ kiểm thử tích hợp (Unit & Integration tests)
+├── Dockerfile                      # Single-stage container image
+├── docker-compose.yml              # Triển khai app + Vector DB (Qdrant)
+├── pyproject.toml                  # Quản lý dependency tập trung qua Poetry
+├── .env.example                    # Biến môi trường mẫu
+├── .env                            # Biến môi trường local
 ├── .gitignore
 └── README.md
 ```
 
-### Quy trình dữ liệu (Pipeline flow):
-```
-Client  ───> [gateway-service :8005]
-                     │
-                     ├─(1. Query)──> [retrieval-service :8003] ──(Embed Query)──> [embedding-service :8002]
-                     │                       │
-                     │                 (Top-K Chunks)
-                     │                       │
-                     └─(2. Query + Chunks)──> [generation-service :8004] ──(LLM)
-                                                     │
-Client  <─── (Final Answer + Citations) ─────────────┘
-```
-
 ---
 
-## 2. Chu trình RAG Pipeline chuẩn hóa (12 Steps across 4 Phases)
+## 2. Chu trình RAG Pipeline chuẩn hóa (12 Bước qua 4 Giai đoạn)
 
-Hệ thống chia nhỏ toàn bộ luồng RAG thành **12 bước** tương ứng trong các microservices, kiểm soát nghiêm ngặt 4 điểm lỗi thường gặp (*Failure Points*):
+Hệ thống tổ chức ranh giới code nghiêm ngặt nhằm giải quyết 4 điểm lỗi chí mạng (*Four Failure Points*) thường gặp trong triển khai RAG:
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────────┐
-│ 1. INGESTION ("Garbage in, garbage out - Tránh chunk vội vã, bỏ qua metadata")    │
-│  [Step 1: Data Sources]         -> Thu thập PDF, APIs, Web, Transcripts           │
-│  [Step 2: Document Loading]     -> Parse và chuẩn hóa tài liệu đa định dạng       │
-│  [Step 3: Meaningful Chunking]  -> Phân tách theo ngữ nghĩa, bảo toàn văn cảnh   │
-│  [Step 4: Metadata Extraction]  -> Trích xuất tiêu đề, tác giả, năm, quartile...  │
+│ 1. INGESTION ("Garbage in, garbage out - Tránh chunk vội vã, bỏ sót metadata")    │
+│  ├── [Step 1: Data Sources]         -> app/modules/ingestion/data_sources/        │
+│  ├── [Step 2: Document Loading]     -> app/modules/ingestion/loaders/             │
+│  ├── [Step 3: Meaningful Chunking]  -> app/modules/ingestion/chunking/            │
+│  └── [Step 4: Metadata Extraction]  -> app/modules/ingestion/metadata/            │
 └────────────────────────────────────────┬──────────────────────────────────────────┘
                                          ▼
 ┌───────────────────────────────────────────────────────────────────────────────────┐
 │ 2. INDEXING ("Building the Brain - Xây dựng bộ nhớ vector hiệu năng cao")         │
-│  [Step 5: Embeddings]           -> Chuyển đổi chunks thành high-dimensional vector │
-│  [Step 6: Vector Database]      -> Lưu trữ và lập chỉ mục (Indexed Knowledge)     │
+│  ├── [Step 5: Embeddings]           -> app/modules/indexing/embedders/            │
+│  └── [Step 6: Vector Database]      -> app/modules/indexing/vector_store/         │
 └────────────────────────────────────────┬──────────────────────────────────────────┘
                                          ▼
 ┌───────────────────────────────────────────────────────────────────────────────────┐
 │ 3. RETRIEVAL ("The Make-or-Break Stage - Tránh trả về số lượng thay vì chất lượng")│
-│  [Step 7: Query Rewriting]      -> Làm rõ ý định người dùng, mở rộng query       │
-│  [Step 8: Hybrid Search]        -> Kết hợp Vector Dense + Lexical Sparse (BM25)   │
-│  [Step 9: Reranking]            -> Rerank bằng Cross-Encoder chấm điểm chính xác  │
+│  ├── [Step 7: Query Rewriting]      -> app/modules/retrieval/query_rewriting/     │
+│  ├── [Step 8: Hybrid Search]        -> app/modules/retrieval/hybrid_search/       │
+│  └── [Step 9: Reranking]            -> app/modules/retrieval/reranking/           │
 └────────────────────────────────────────┬──────────────────────────────────────────┘
                                          ▼
 ┌───────────────────────────────────────────────────────────────────────────────────┐
 │ 4. GENERATION & EVALUATION ("Close the Loop - Đảm bảo tin cậy, có trích dẫn")    │
-│  [Step 10: Context Assembly]    -> Chọn lọc, sắp xếp và nén ngữ cảnh tối ưu       │
-│  [Step 11: LLM Generation]      -> Sinh câu trả lời căn cứ chặt chẽ vào context   │
-│  [Step 12: Evaluation]          -> Đo lường Faithfulness, Latency, Cost, Citation │
+│  ├── [Step 10: Context Assembly]    -> app/modules/generation/context_assembly/   │
+│  ├── [Step 11: LLM Generation]      -> app/modules/generation/llm/                │
+│  └── [Step 12: Evaluation]          -> app/modules/generation/evaluation/         │
 └────────────────────────────────────────┬──────────────────────────────────────────┘
                                          ▼
                                  [Grounded Answer]
@@ -78,169 +108,79 @@ Hệ thống chia nhỏ toàn bộ luồng RAG thành **12 bước** tương ứ
 
 ---
 
-## 3. Bảng danh mục Microservices & Swagger UI
+## 3. Swagger UI & Danh mục API Endpoints
 
+Toàn bộ hệ thống được expose tập trung tại một cổng duy nhất:
+- **Base URL:** `http://localhost:8000`
+- **Swagger UI Interactive Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **OpenAPI JSON Spec:** [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
 
-| Service | Port | Swagger UI (Docs) | OpenAPI Spec | Mô tả chính |
-| :--- | :--- | :--- | :--- | :--- |
-| **ingestion-service** | `8001` | [http://localhost:8001/docs](http://localhost:8001/docs) | `/openapi.json` | Upload tài liệu (PDF, TXT, DOCX), phân tách chunking, quản lý metadata |
-| **embedding-service** | `8002` | [http://localhost:8002/docs](http://localhost:8002/docs) | `/openapi.json` | Nhận danh sách text chunks, sinh vector float biểu diễn |
-| **retrieval-service** | `8003` | [http://localhost:8003/docs](http://localhost:8003/docs) | `/openapi.json` | Tìm kiếm ngữ cảnh vector tương đồng, reranking top-k context |
-| **generation-service**| `8004` | [http://localhost:8004/docs](http://localhost:8004/docs) | `/openapi.json` | Nhận query và context, gọi LLM tạo câu trả lời chuẩn xác kèm trích dẫn |
-| **gateway-service**   | `8005` | [http://localhost:8005/docs](http://localhost:8005/docs) | `/openapi.json` | Cổng API duy nhất cho Client, điều phối chuỗi RAG Pipeline |
-
----
-
-## 3. Danh sách Endpoints chi tiết
-
-### 3.1. Ingestion Service (`:8001`)
-- `POST /api/v1/documents` — Tải lên tài liệu hoặc body text, thực hiện chunking và trả về danh sách chunks.
-- `GET /api/v1/documents/{id}` — Lấy chi tiết tài liệu, trạng thái và các chunks đã tạo.
-- `GET /health` — Kiểm tra trạng thái service.
-
-### 3.2. Embedding Service (`:8002`)
-- `POST /api/v1/embeddings` — Nhận mảng chuỗi văn bản `texts`, trả về mảng vector embeddings và số token tiêu thụ.
-- `GET /health` — Kiểm tra trạng thái service.
-
-### 3.3. Retrieval Service (`:8003`)
-- `POST /api/v1/retrieve` — Nhận query, `top_k`, `score_threshold`, `rerank`, trả về top context passages liên quan nhất.
-- `GET /health` — Kiểm tra trạng thái service.
-
-### 3.4. Generation Service (`:8004`)
-- `POST /api/v1/generate` — Nhận query và danh sách contexts, gọi mô hình LLM để sinh câu trả lời trích dẫn.
-- `GET /health` — Kiểm tra trạng thái service.
-
-### 3.5. Gateway Service (`:8005`)
-- `POST /api/v1/chat` — Điểm tiếp nhận câu hỏi từ Client, điều phối tìm kiếm ngữ cảnh và tổng hợp câu trả lời hoàn chỉnh.
-- `GET /health` — Kiểm tra trạng thái service.
+| Nhóm chức năng | Method | Endpoint | Mô tả |
+| :--- | :--- | :--- | :--- |
+| **System** | `GET` | `/health` | Kiểm tra trạng thái ứng dụng |
+| | `GET` | `/` | Thông tin chào mừng & sitemap |
+| **Phase 1: Ingestion** | `POST` | `/api/v1/documents` | Upload và phân tách chunking tài liệu khoa học |
+| | `GET` | `/api/v1/documents/{id}` | Lấy chi tiết thông tin tài liệu và danh sách chunks |
+| **Phase 2: Indexing** | `POST` | `/api/v1/embeddings` | Chuyển đổi chuỗi văn bản thành dense vector embeddings |
+| **Phase 3: Retrieval** | `POST` | `/api/v1/retrieve` | Semantic vector search, hybrid search và cross-encoder rerank |
+| **Phase 4: Generation** | `POST` | `/api/v1/generate` | Gọi LLM sinh câu trả lời căn cứ chặt chẽ vào context |
+| **End-to-End RAG** | `POST` | `/api/v1/chat` | Luồng Chat RAG hợp nhất (Retrieve -> Assembly -> Generate) |
 
 ---
 
-## 4. Hướng dẫn chạy dự án
+## 4. Hướng dẫn khởi chạy
 
-### Cách 1: Chạy toàn bộ hệ thống bằng Docker Compose (Khuyến nghị)
-
-Yêu cầu: Đã cài đặt [Docker](https://www.docker.com/) và Docker Compose.
+### Cách 1: Chạy bằng Docker Compose (Khuyến nghị)
+Bao gồm ứng dụng Modular Monolith và cơ sở dữ liệu Vector Qdrant:
 
 ```bash
-# 1. Clone hoặc mở thư mục gốc của dự án
-cd Rag_System_AI
-
-# 2. Khởi chạy toàn bộ 5 microservices
+# Khởi chạy ứng dụng và Vector DB
 docker-compose up --build
 
 # Hoặc chạy nền:
 docker-compose up -d --build
 ```
+Truy cập:
+- RAG Application: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Qdrant Vector DB Web Dashboard: [http://localhost:6333/dashboard](http://localhost:6333/dashboard)
 
-Sau khi khởi động thành công, bạn có thể truy cập Swagger UI của từng service theo bảng danh mục ở mục 2.
-
-Để dừng toàn bộ:
+Dừng hệ thống:
 ```bash
 docker-compose down
 ```
 
 ---
 
-### Cách 2: Chạy từng Service riêng lẻ bằng Uvicorn
+### Cách 2: Chạy trực tiếp trên máy cục bộ (Local Development)
 
-Mỗi service hoàn toàn độc lập và có thể chạy trực tiếp bằng `uvicorn` trên máy phát triển.
-
-#### Yêu cầu môi trường:
+#### Yêu cầu:
 - Python 3.11+
 - Poetry hoặc pip
 
 #### Cài đặt và khởi chạy:
-
-**1. Ingestion Service (Port 8001)**
 ```bash
-cd services/ingestion-service
+# 1. Cài đặt dependency
 poetry install
-poetry run uvicorn app.main:app --reload --port 8001
-# Hoặc với python thông thường:
-# uvicorn app.main:app --reload --port 8001
-```
+# Hoặc: pip install fastapi uvicorn pydantic pydantic-settings python-multipart httpx
 
-**2. Embedding Service (Port 8002)**
-```bash
-cd services/embedding-service
-poetry install
-poetry run uvicorn app.main:app --reload --port 8002
-```
-
-**3. Retrieval Service (Port 8003)**
-```bash
-cd services/retrieval-service
-poetry install
-poetry run uvicorn app.main:app --reload --port 8003
-```
-
-**4. Generation Service (Port 8004)**
-```bash
-cd services/generation-service
-poetry install
-poetry run uvicorn app.main:app --reload --port 8004
-```
-
-**5. Gateway Service (Port 8005)**
-```bash
-cd services/gateway-service
-poetry install
-poetry run uvicorn app.main:app --reload --port 8005
+# 2. Khởi chạy server Uvicorn
+poetry run uvicorn app.main:app --reload --port 8000
+# Hoặc:
+# uvicorn app.main:app --reload --port 8000
 ```
 
 ---
 
-## 5. Trích xuất hợp đồng OpenAPI Specification
+## 5. Kiểm thử & Xuất đặc tả OpenAPI
 
-Mỗi service được trang bị script `scripts/export_openapi.py` giúp tự động trích xuất định nghĩa API (`openapi.json`) ra thư mục `docs/openapi/<service-name>.json` nhằm phục vụ việc review hợp đồng API (API contract review) và tích hợp client SDK:
-
+### Chạy Unit Test:
 ```bash
-# Export cho Ingestion Service
-python services/ingestion-service/scripts/export_openapi.py
-
-# Export cho Embedding Service
-python services/embedding-service/scripts/export_openapi.py
-
-# Export cho Retrieval Service
-python services/retrieval-service/scripts/export_openapi.py
-
-# Export cho Generation Service
-python services/generation-service/scripts/export_openapi.py
-
-# Export cho Gateway Service
-python services/gateway-service/scripts/export_openapi.py
+python -m unittest discover tests
 ```
 
-Các file JSON sau khi export sẽ nằm tại thư mục `docs/openapi/`:
-- `docs/openapi/ingestion-service.json`
-- `docs/openapi/embedding-service.json`
-- `docs/openapi/retrieval-service.json`
-- `docs/openapi/generation-service.json`
-- `docs/openapi/gateway-service.json`
-
----
-
-## 6. Cấu trúc chuẩn của một Service
-
-Mọi service trong thư mục `services/` đều tuân thủ chặt chẽ pattern sau:
-
+### Xuất lại OpenAPI Spec:
+```bash
+python scripts/export_openapi.py
 ```
-<service-name>/
-├── app/
-│   ├── main.py              # Khởi tạo FastAPI với title, description, version, health check
-│   ├── api/
-│   │   └── v1/
-│   │       └── routes.py    # Định nghĩa endpoint API, prefix /api/v1
-│   ├── schemas/             # Pydantic Request/Response models với đầy đủ example
-│   ├── services/            # Business logic (được tách lớp độc lập với API handler)
-│   └── core/
-│       └── config.py        # Đọc biến môi trường bằng pydantic-settings
-├── scripts/
-│   └── export_openapi.py    # Script trích xuất OpenAPI JSON contract
-├── pyproject.toml           # Quản lý dependencies qua Poetry
-├── Dockerfile               # Container build script (python:3.11-slim)
-├── .env.example             # Mẫu cấu hình môi trường
-├── .env                     # Biến môi trường cục bộ
-└── README.md                # Tài liệu hướng dẫn riêng của service
-```
+File đặc tả sẽ được cập nhật tự động tại: `docs/openapi/openapi.json`.

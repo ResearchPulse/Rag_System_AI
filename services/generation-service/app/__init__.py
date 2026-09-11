@@ -1,1 +1,0 @@
-"""Generation Service Application Package."""
