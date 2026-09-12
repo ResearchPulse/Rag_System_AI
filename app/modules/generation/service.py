@@ -23,8 +23,44 @@ class GenerationService:
         start_time = time.perf_counter()
         model_name = request.model or self.settings.LLM_MODEL
 
+        # If no contexts found in DB / Graph, return appropriate response
+        if not request.contexts:
+            lower_q = request.query.lower().strip(" ?,.!;:~")
+            chitchat_tokens = [
+                "chào", "hello", "hi", "hey", "alo", "bạn là ai", "who are you",
+                "cảm ơn", "thanks", "tạm biệt", "bye", "bạn làm được gì", "giúp", "hướng dẫn",
+            ]
+            if any(tok in lower_q for tok in chitchat_tokens) or len(lower_q.split()) <= 3:
+                answer = (
+                    "Xin chào bạn! Tôi là **Trợ lý AI Nghiên cứu Khoa học** (Scientific Journal Trend Tracking Assistant).\n\n"
+                    "Tôi có thể hỗ trợ bạn:\n"
+                    "- 📚 **Tra cứu bài báo & tóm tắt nghiên cứu**: Phân tích nội dung các công bố khoa học từ kho dữ liệu PostgreSQL (pgvector).\n"
+                    "- 🕸️ **Khám phá Đồ thị Tri thức (Knowledge Graph)**: Tra cứu thông tin tác giả, mạng lưới đồng tác giả, danh sách xuất bản và trích dẫn từ Neo4j.\n"
+                    "- 📈 **Phân tích xu hướng học thuật**: Xu hướng theo chủ đề (Topic), tạp chí (Journal) và năm xuất bản.\n\n"
+                    "Bạn muốn tìm hiểu thông tin hoặc nghiên cứu về chủ đề gì hôm nay?"
+                )
+            else:
+                answer = (
+                    f"Hệ thống không tìm thấy bất kỳ bài báo khoa học, tác giả hay thông tin liên quan nào "
+                    f"phù hợp với câu hỏi '{request.query}' trong cơ sở dữ liệu."
+                )
+            latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            return GenerationResponse(
+                query=request.query,
+                answer=answer,
+                model=model_name,
+                contexts_used=0,
+                citations=[],
+                usage=GenerationUsage(
+                    prompt_tokens=len(request.query.split()),
+                    completion_tokens=len(answer.split()),
+                    total_tokens=len(request.query.split()) + len(answer.split()),
+                ),
+                latency_ms=latency_ms,
+            )
+
         citations = [ctx.source for ctx in request.contexts if ctx.source]
-        citations_unique = list(set(citations)) if citations else ["Scholarly Literature Corpus"]
+        citations_unique = list(set(citations)) if citations else []
 
         answer = ""
         if self.settings.GEMINI_API_KEY:
@@ -34,22 +70,28 @@ class GenerationService:
 
                 context_blocks = []
                 for idx, ctx in enumerate(request.contexts, 1):
-                    src = ctx.source or f"Paper {idx}"
+                    src = ctx.source or f"Nguồn {idx}"
                     context_blocks.append(f"[{idx}] Tiêu đề / Nguồn: {src}\nNội dung: {ctx.content[:1000]}")
                 context_str = "\n\n".join(context_blocks)
 
                 prompt = (
                     "Bạn là Trợ lý Nghiên cứu Khoa học (Scientific Journal AI Assistant).\n"
-                    "Dựa vào các bài báo khoa học được trích xuất từ cơ sở dữ liệu dưới đây, hãy trả lời câu hỏi của người dùng một cách chính xác, học thuật, có dẫn chứng rõ ràng tên bài báo.\n\n"
-                    f"--- CÁC BÀI BÁO KHOA HỌC TÌM THẤY ---\n{context_str}\n\n"
+                    "Dựa vào các bài báo khoa học và dữ liệu trích xuất từ cơ sở dữ liệu dưới đây, "
+                    "hãy trả lời câu hỏi của người dùng một cách chính xác, học thuật, có dẫn chứng rõ ràng.\n\n"
+                    "QUY TẮC BẮT BUỘC:\n"
+                    "- Tuyệt đối chỉ trả lời dựa trên dữ liệu được cung cấp dưới đây.\n"
+                    "- Không tự bịa đặt tác giả, bài báo hay số liệu không có trong tài liệu.\n"
+                    "- Nếu tài liệu không chứa đủ thông tin để trả lời, hãy thành thật nêu rõ rằng "
+                    "cơ sở dữ liệu chưa có thông tin về vấn đề này.\n\n"
+                    f"--- CÁC TÀI LIỆU TRÍCH XUẤT TỪ HỆ THỐNG ---\n{context_str}\n\n"
                     f"--- CÂU HỎI ---\n{request.query}\n\n"
-                    "Hãy trả lời bằng tiếng Việt và liệt kê các nguồn bài báo tham khảo:"
+                    "Hãy trả lời bằng tiếng Việt và liệt kê các nguồn tham khảo chính xác:"
                 )
 
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.settings.GEMINI_API_KEY}"
                 payload = {
                     "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": request.temperature or 0.3, "maxOutputTokens": 2048},
+                    "generationConfig": {"temperature": request.temperature or 0.2, "maxOutputTokens": 2048},
                 }
                 req = urllib.request.Request(
                     url,
@@ -63,11 +105,10 @@ class GenerationService:
                 answer = ""
 
         if not answer:
+            facts = "\n".join(f"- {c.content}" for c in request.contexts[:3])
             answer = (
-                f"Dựa trên các bài báo khoa học đã được trích xuất ({', '.join(citations_unique)}):\n\n"
-                f"Đối với câu hỏi '{request.query}', các nghiên cứu mới nhất chỉ ra rằng xu hướng chủ đạo "
-                "tập trung vào việc kết hợp mô hình RAG dạng Modular Monolith, tối ưu hóa quá trình chunking ngữ nghĩa "
-                "theo cấu trúc bài báo khoa học, và áp dụng reranking Cross-Encoder 2 tầng để nâng cao độ chính xác."
+                f"Dựa trên dữ liệu ghi nhận từ hệ thống ResearchPulse ({', '.join(citations_unique) if citations_unique else 'Cơ sở dữ liệu'}):\n"
+                f"{facts}"
             )
 
         prompt_tokens = sum(len(c.content.split()) for c in request.contexts) + len(request.query.split()) + 25
