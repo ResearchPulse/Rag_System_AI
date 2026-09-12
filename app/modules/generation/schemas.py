@@ -17,8 +17,7 @@ class GenerationRequest(BaseModel):
         examples=["What are recent publication trends in generative AI models?"],
     )
     contexts: List[ContextItem] = Field(
-        ...,
-        min_length=1,
+        default_factory=list,
         description="Context passages to ground the response",
     )
     model: Optional[str] = Field(default=None, examples=["gpt-4o-mini"])
