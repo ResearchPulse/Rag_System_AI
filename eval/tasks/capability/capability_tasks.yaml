@@ -1,0 +1,109 @@
+id: "CAP-01"
+tier: "capability"
+category: "multi_doc_bioinformatics"
+query: "So sánh nghiên cứu về MRBAYES và thuật toán UBLAST trong phân tích trình tự sinh học."
+expected_doc_ids:
+  - "doc_115043"
+  - "doc_115045"
+reference_answer: "MRBAYES dùng phương pháp chuỗi Markov Monte Carlo (MCMC) trong suy luận Bayes để xây dựng cây phát sinh loài, trong khi UBLAST/USEARCH tập trung vào thuật toán heuristics tốc độ cao để tìm kiếm và gom cụm cơ sở dữ liệu trình tự lớn."
+reference_solution:
+  key_points:
+    - "MRBAYES: MCMC, Bayesian inference"
+    - "USEARCH/UBLAST: sequence search and clustering"
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 0.5
+        precision@5: 0.2
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "CAP-02"
+tier: "capability"
+category: "deep_learning_evolution"
+query: "So sánh bài báo về Fully Convolutional Networks (FCN) và bài báo về Squeeze-and-Excitation Networks (SENet) trong thị giác máy tính."
+expected_doc_ids:
+  - "doc_6253"
+  - "doc_6247"
+reference_answer: "FCN phát triển mô hình convolutional end-to-end xử lý ảnh pixel-to-pixel cho semantic segmentation, trong khi SENet nâng cấp khả năng biểu diễn đặc trưng bằng cách bổ sung cơ chế chú ý channel-wise (tự động điều chỉnh trọng số giữa các kênh)."
+reference_solution:
+  key_points:
+    - "FCN: pixel-level semantic segmentation"
+    - "SENet: channel-wise attention mechanism"
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 0.5
+        precision@5: 0.2
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "CAP-03"
+tier: "capability"
+category: "cross_domain_synthesis"
+query: "Nghiên cứu về vật liệu nanogel F127-Glu@ZnO và nanocomposite TiO2@porphyrin trong hệ thống."
+expected_doc_ids:
+  - "doc_1018864"
+  - "doc_1018975"
+reference_answer: "Vật liệu nanogel F127-Glu@ZnO được nghiên cứu ứng dụng làm chất mang phân phối thuốc cisplatin trong y sinh, còn vật liệu nanocomposite TiO2@porphyrin được phát triển cho phản ứng quang điện hóa tách nước sản xuất hydro phục vụ năng lượng và môi trường."
+reference_solution:
+  key_points:
+    - "F127-Glu@ZnO: phân phối thuốc cisplatin"
+    - "TiO2@porphyrin: quang điện hóa tách nước sinh hydro"
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 0.5
+        precision@5: 0.2
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "CAP-04"
+tier: "capability"
+category: "computational_sequence_tools"
+query: "So sánh bài báo về HTSeq và bài báo về Geneious Basic trong xử lý dữ liệu trình tự."
+expected_doc_ids:
+  - "doc_115041"
+  - "doc_115049"
+reference_answer: "Hệ thống bao gồm HTSeq - một framework thư viện Python chuyên biệt xử lý dữ liệu giải trình tự thông lượng cao (HTS), và Geneious Basic - nền tảng phần mềm máy tính để bàn tích hợp, có khả năng mở rộng để tổ chức và phân tích dữ liệu trình tự."
+reference_solution:
+  key_points:
+    - "HTSeq: Python framework for HTS data"
+    - "Geneious Basic: Desktop software platform"
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 0.5
+        precision@5: 0.2
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "CAP-05"
+tier: "capability"
+category: "vietnamese_mechanics_synthesis"
+query: "Nghiên cứu về điều khiển cầu trục và ứng xử biến cứng của thép 316L tại Việt Nam."
+expected_doc_ids:
+  - "doc_1018912"
+  - "doc_1018934"
+reference_answer: "Các nghiên cứu tập trung vào bài toán điều khiển chống dao động tải trọng cho hệ thống cầu trục công nghiệp dựa trên lý thuyết phẳng, cùng với nghiên cứu thực nghiệm và mô phỏng số ứng xử đàn dẻo, biến cứng của vật liệu thép 316L dưới tải trọng chu kỳ."
+reference_solution:
+  key_points:
+    - "Cầu trục con lắc đơn, lý thuyết phẳng"
+    - "Ứng xử biến cứng thép 316L"
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 0.5
+        precision@5: 0.2
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"

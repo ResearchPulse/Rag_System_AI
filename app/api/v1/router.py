@@ -4,6 +4,8 @@ from app.api.v1.endpoints.generation import router as generation_router
 from app.api.v1.endpoints.ingestion import router as ingestion_router
 from app.api.v1.endpoints.rag import router as rag_router
 from app.api.v1.endpoints.retrieval import router as retrieval_router
+from app.api.v1.endpoints.chat_history import router as chat_history_router
+from app.api.v1.endpoints.context_memory import router as context_memory_router
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -12,3 +14,7 @@ api_v1_router.include_router(embedding_router)
 api_v1_router.include_router(retrieval_router)
 api_v1_router.include_router(generation_router)
 api_v1_router.include_router(rag_router)
+api_v1_router.include_router(chat_history_router)
+api_v1_router.include_router(context_memory_router)
+
+

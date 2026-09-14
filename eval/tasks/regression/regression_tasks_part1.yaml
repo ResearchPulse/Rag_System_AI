@@ -1,0 +1,99 @@
+id: "REG-01"
+tier: "regression"
+category: "bioinformatics_alignment"
+query: "Bài báo về Clustal W và Clustal X phiên bản 2.0 được viết lại bằng ngôn ngữ lập trình nào?"
+expected_doc_ids:
+  - "doc_115038"
+reference_answer: "Clustal W và Clustal X phiên bản 2.0 đã được viết lại hoàn toàn bằng ngôn ngữ C++ để tạo điều kiện thuận lợi cho việc phát triển các thuật toán dóng hàng (alignment) trong tương lai."
+reference_solution:
+  known_article_title: "Clustal W and Clustal X version 2.0"
+  keywords: ["C++", "multiple sequence alignment", "Clustal W", "Clustal X"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "REG-02"
+tier: "regression"
+category: "bioinformatics_sequence_search"
+query: "Nghiên cứu về UBLAST và USEARCH có ưu điểm gì vượt trội so với BLAST trong phân loại trình tự sinh học?"
+expected_doc_ids:
+  - "doc_115045"
+reference_answer: "UBLAST và USEARCH là các thuật toán mới giúp tìm kiếm và gom cụm trình tự sinh học với tốc độ nhanh hơn nhiều bậc độ lớn (orders of magnitude faster) so với BLAST."
+reference_solution:
+  known_article_title: "Search and clustering orders of magnitude faster than BLAST"
+  keywords: ["UBLAST", "USEARCH", "faster than BLAST"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "REG-03"
+tier: "regression"
+category: "phylogenetics"
+query: "Nghiên cứu về MRBAYES sử dụng phương pháp thống kê nào để suy luận cây phát sinh chủng loại?"
+expected_doc_ids:
+  - "doc_115043"
+reference_answer: "Phần mềm MRBAYES thực hiện suy luận Bayes về phát sinh loài bằng cách sử dụng biến thể của chuỗi Markov Monte Carlo (MCMC)."
+reference_solution:
+  known_article_title: "MRBAYES: Bayesian inference of phylogenetic trees"
+  keywords: ["Bayesian inference", "Markov chain Monte Carlo", "phylogeny"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "REG-04"
+tier: "regression"
+category: "bioinformatics_python"
+query: "Bài báo về HTSeq được phát triển nhằm mục đích gì trong phân tích dữ liệu giải trình tự?"
+expected_doc_ids:
+  - "doc_115041"
+reference_answer: "HTSeq là một framework viết bằng Python hỗ trợ xử lý dữ liệu giải trình tự thông lượng cao (high-throughput sequencing data)."
+reference_solution:
+  known_article_title: "HTSeq—a Python framework to work with high-throughput sequencing data"
+  keywords: ["Python framework", "high-throughput sequencing"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "REG-05"
+tier: "regression"
+category: "deep_learning_vision"
+query: "Bài báo về Squeeze-and-Excitation Networks (SENet) cải thiện mạng nơ-ron tích chập như thế nào?"
+expected_doc_ids:
+  - "doc_6247"
+reference_answer: "SENet giới thiệu cơ chế channel-wise attention, cho phép mạng tự động tái hiệu chuẩn trọng số đặc trưng giữa các kênh (channel-wise feature responses) bằng cách mô hình hóa tường minh sự phụ thuộc lẫn nhau giữa các kênh."
+reference_solution:
+  known_article_title: "Squeeze-and-Excitation Networks"
+  keywords: ["channel-wise attention", "recalibrate", "convolutional neural networks"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"

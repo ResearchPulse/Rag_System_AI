@@ -23,12 +23,15 @@ import json
 import logging
 import re
 import time
+import unicodedata
 import urllib.request
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.modules.retrieval.query_rewriting.compressor import QueryCompressor
+from app.modules.retrieval.embedding_classifier import EmbeddingClassifier
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +79,7 @@ class ExtractedFilters(BaseModel):
     journal: Optional[str] = Field(default=None, description="Journal or publisher name")
     doi: Optional[str] = Field(default=None, description="Extracted Digital Object Identifier (DOI)")
     metric: Optional[str] = Field(default=None, description="Statistical metric requirement (e.g. count, citations, rank)")
+    target_entity: str = Field(default="article", description="Target entity type: 'article', 'author', 'journal', 'topic', 'keyword'")
 
 
 class ExecutionPlan(BaseModel):
@@ -210,9 +214,54 @@ TUYỆT ĐỐI KHÔNG trả lời trực tiếp nội dung câu hỏi.
 }
 """
 
+OLLAMA_CLASSIFIER_PROMPT = """Phân loại câu hỏi nghiên cứu khoa học vào đúng 1 JSON object:
+Categories:
+- "direct_lookup" (sub: "sql_aggregation" nếu đếm/thống kê số lượng; "semantic_similarity" nếu tìm nội dung, khái niệm; "metadata_lookup" nếu mã DOI)
+- "relational_reasoning" (sub: "co_authorship" nếu hỏi đồng tác giả, hợp tác; "author_publications" nếu hỏi bài báo của tác giả)
+- "hybrid" (sub: "topic_clustering" nếu hỏi xu hướng nghiên cứu; "filtered_graph" nếu vừa lọc năm/chủ đề vừa hỏi quan hệ)
+- "chitchat" (sub: "chitchat" nếu chào hỏi xã giao)
+- "clarification_needed" (sub: "ambiguous" nếu quá ngắn/không rõ ý)
+
+Ví dụ định dạng trả về (CHỈ JSON):
+{"category": "hybrid", "sub_category": "topic_clustering", "extracted_filters": {"keyword": "RAG", "year": 2024}}"""
+
+
+class QueryRoutingCache:
+    """Stage 7: In-memory LRU cache for query classification decisions."""
+
+    def __init__(self, capacity: int = 512):
+        self.capacity = capacity
+        self._cache: Dict[str, ClassificationResult] = {}
+        self._order: List[str] = []
+
+    def get(self, key: str) -> Optional[ClassificationResult]:
+        if key in self._cache:
+            self._order.remove(key)
+            self._order.append(key)
+            return self._cache[key]
+        return None
+
+    def set(self, key: str, value: ClassificationResult):
+        if key in self._cache:
+            self._cache[key] = value
+            return
+        if len(self._cache) >= self.capacity:
+            oldest = self._order.pop(0)
+            self._cache.pop(oldest, None)
+        self._cache[key] = value
+        self._order.append(key)
+
 
 class QueryClassifier:
-    """Enterprise 3-Layer Query Classifier for ResearchPulse."""
+    """Enterprise 6-Stage Query Semantic Router for ResearchPulse (Image 2 Architecture):
+    1. User Query
+    2. Preprocess & Normalize (clean text, typo correction, language detection, compression)
+    3. Rule-based Fast Path (regex sub-millisecond pattern catching)
+    4. Embedding Classifier (kNN vs few-shot examples via char/word n-gram vectorization)
+    5. LLM Classifier Fallback (handles low-confidence cases with local Ollama)
+    6. Routing Decision (generates unified ExecutionPlan)
+    7. Cache & Feedback Log (stores result for reuse in 0.001ms)
+    """
 
     CHITCHAT_PATTERNS = [
         r"^(chào|hello|hi|hey|alo|xin chào|good morning|good afternoon)\b",
@@ -224,7 +273,10 @@ class QueryClassifier:
     DOI_PATTERN = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b")
 
     COUNT_PATTERNS = [
-        r"\b(bao nhiêu bài|how many articles|how many papers|thống kê số lượng bài|đếm số bài)\b",
+        r"(tổng\s*(số)?\s*(lượng)?|số\s*lượng|bao\s*nhiêu|thống\s*kê|đếm|tổng\s*cộng)\s*(bài\s*báo|công\s*bố|nghiên\s*cứu|tác\s*phẩm|tạp\s*chí|tác\s*giả|chủ\s*đề|lĩnh\s*vực|từ\s*khóa|paper|article|author|journal|topic|keyword)",
+        r"\b(bao nhiêu (bài|tác giả|tạp chí|chủ đề|từ khóa)|how many (articles|papers|authors|journals|topics)|thống kê số lượng|đếm số (bài|tác giả|tạp chí|chủ đề))\b",
+        r"\b(count|total number of|number of (papers|articles|authors|journals|topics))\b",
+        r"(tổng\s*(số)?|số\s*lượng|thống\s*kê)\s+.*(20\d\d|19\d\d|tác\s*giả|tạp\s*chí|chủ\s*đề)",
     ]
 
     RELATIONAL_KEYWORDS = [
@@ -236,34 +288,284 @@ class QueryClassifier:
 
     def __init__(self) -> None:
         self.settings = get_settings()
+        self.embedding_classifier = EmbeddingClassifier(n_neighbors=3, min_similarity_threshold=0.55)
+        self.cache = QueryRoutingCache(capacity=512)
+
+    @staticmethod
+    def _extract_dynamic_topic(query: str) -> Optional[str]:
+        """Dynamically extracts research topic or technical keyword from query."""
+        # 1. Quoted terms
+        quoted = re.findall(r'"([^"]+)"', query)
+        if quoted:
+            return quoted[0].strip()
+
+        # 2. English tech acronyms & common paradigms (case-insensitive for distinctive acronyms)
+        tech_acronyms = re.findall(
+            r"\b(RAG|LLM|LLMs|GNN|NLP|IoT|BERT|GPT|CNN|SVM|Transformer|Deep Learning|Machine Learning|Computer Vision|Blockchain|Cybersecurity|Cloud Computing)\b",
+            query,
+            re.IGNORECASE,
+        )
+        if tech_acronyms:
+            return tech_acronyms[0].strip()
+
+        # Case-sensitive check for 2-letter 'AI' to avoid false match on Vietnamese pronoun 'ai' (who)
+        ai_match = re.findall(r"\bAI\b", query)
+        if ai_match:
+            return "AI"
+
+        # 3. Topic after 'về', 'chủ đề', 'lĩnh vực', 'topic', 'about'
+        tm = re.search(
+            r"(?:về|chủ đề|lĩnh vực|topic|about)\s+([^\?,\.;\n]+?)(?:\s+(?:trong|tại|ở|vào|năm\s+\d{4}|sau|trước|từ|đến|in|at|được|có|là|nào|đã|như thế nào|ra sao)|[\?,\.;]|$)",
+            query,
+            re.IGNORECASE,
+        )
+
+        if tm:
+            cand = tm.group(1).strip()
+            for stop in ["bài báo", "công bố", "nghiên cứu", "khoa học", "paper", "article"]:
+                cand = re.sub(r"\b" + stop + r"\b", "", cand, flags=re.IGNORECASE).strip()
+            if cand and len(cand) >= 2:
+                return cand
+
+        return None
+
+    @staticmethod
+    def _extract_dynamic_author(query: str) -> Optional[str]:
+        """Dynamically extracts author name from query."""
+        m = re.search(
+            r"(?:tác giả|author|by|gs|ts|giáo sư|tiến sĩ)\s+([A-Za-z\s\.\-]+?)(?:\s+(?:đã|có|nào|những|là|trong|vào|và|hợp tác|thường|hay|cùng|who|has|published|wrote|được)|[\?,\.;]|$)",
+            query,
+            re.IGNORECASE,
+        )
+        if m:
+            cand = m.group(1).strip()
+            if cand.lower() not in ["nào", "ai", "mấy", "gì", "những ai", "bao nhiêu", "nghiên cứu", "khoa học"]:
+                return cand
+        return None
+
+
+    @staticmethod
+    def _preprocess_and_normalize(query: str) -> Tuple[str, str, str, str]:
+        """Stage 2: Preprocess & normalize:
+        - Text cleaning & NFC normalization
+        - Typo correction for common academic Vietnamese terms (e.g. 'tác giác' -> 'tác giả')
+        - Language detection
+        - Token compression
+        """
+        raw = unicodedata.normalize("NFC", query.strip())
+
+        # Typo normalizations
+        normalized = raw
+        typo_maps = [
+            (r"\btác\s*giác\b", "tác giả"),
+            (r"\bbài\s*bao\b", "bài báo"),
+            (r"\btạp\s*chí\s*nào\b", "tạp chí"),
+            (r"\bnhà\s*khoa\s*học\b", "tác giả"),
+            (r"\bnghiên\s*cứu\s*viên\b", "tác giả"),
+        ]
+        for pat, repl in typo_maps:
+            normalized = re.sub(pat, repl, normalized, flags=re.IGNORECASE)
+
+        # Language detection
+        detected_lang = "vi" if re.search(r"[à-ỹÀ-Ỹ]", normalized) else "en"
+
+        # Token compression
+        compressed = QueryCompressor.compress_query(normalized)
+        return raw, normalized, compressed, detected_lang
+
+    def _build_execution_plan_for_prediction(
+        self,
+        category: QueryCategory,
+        sub_category: QuerySubCategory,
+        query: str,
+        target_entity: Optional[str] = None,
+    ) -> ExecutionPlan:
+        """Constructs target execution plan from Stage 4 embedding prediction."""
+        topic = self._extract_dynamic_topic(query)
+        author = self._extract_dynamic_author(query)
+
+        if sub_category == QuerySubCategory.SQL_AGGREGATION:
+            is_author = target_entity == "author" or any(k in query.lower() for k in ["tác giả", "author", "nhà khoa học"])
+            sql = 'SELECT COUNT(*) FROM "Author";' if is_author else 'SELECT COUNT(*) FROM "Article";'
+            cypher = "MATCH (a:Author) RETURN count(a) AS total_authors;" if is_author else None
+            return ExecutionPlan(
+                requires_sql_aggregation=True,
+                requires_vector_search=False,
+                requires_graph_traversal=is_author,
+                target_store=TargetStore.POSTGRESQL_SQL if not is_author else TargetStore.NEO4J_GRAPH,
+                rewritten_query=query,
+                suggested_sql=sql,
+                suggested_cypher=cypher,
+                recommended_retrievers=["sql_aggregation_retriever"],
+                top_k=1,
+            )
+
+        if category == QueryCategory.CHITCHAT:
+            return ExecutionPlan(
+                requires_sql_aggregation=False,
+                requires_vector_search=False,
+                requires_graph_traversal=False,
+                target_store=TargetStore.NONE,
+                recommended_retrievers=[],
+            )
+
+        if category == QueryCategory.RELATIONAL_REASONING:
+            return ExecutionPlan(
+                requires_sql_aggregation=False,
+                requires_vector_search=False,
+                requires_graph_traversal=True,
+                target_store=TargetStore.NEO4J_GRAPH,
+                rewritten_query=author or query,
+                suggested_cypher=f"MATCH (a:Author) WHERE toLower(a.name) CONTAINS toLower('{author or ''}') RETURN a LIMIT 5;",
+                recommended_retrievers=["graph_retriever"],
+                top_k=5,
+            )
+
+        if category == QueryCategory.HYBRID:
+            return ExecutionPlan(
+                requires_sql_aggregation=False,
+                requires_vector_search=True,
+                requires_graph_traversal=True,
+                target_store=TargetStore.HYBRID_ALL,
+                rewritten_query=topic or query,
+                recommended_retrievers=["graph_retriever", "vector_retriever"],
+                top_k=5,
+            )
+
+        # Default direct_lookup semantic_similarity
+        return ExecutionPlan(
+            requires_sql_aggregation=False,
+            requires_vector_search=True,
+            requires_graph_traversal=False,
+            target_store=TargetStore.POSTGRESQL_PGVECTOR,
+            rewritten_query=query,
+            recommended_retrievers=["hybrid_search_retriever"],
+            top_k=5,
+        )
+
+    def _extract_filters_for_prediction(
+        self,
+        query: str,
+        target_entity: Optional[str] = None,
+    ) -> Optional[ExtractedFilters]:
+        years = sorted(list(set(int(y) for y in re.findall(r"\b(19\d\d|20\d\d)\b", query))))
+        topic = self._extract_dynamic_topic(query)
+        author = self._extract_dynamic_author(query)
+        doi_m = self.DOI_PATTERN.search(query)
+
+        entity = target_entity
+        if not entity:
+            if any(k in query.lower() for k in ["tác giả", "author"]):
+                entity = "author"
+            elif any(k in query.lower() for k in ["tạp chí", "journal"]):
+                entity = "journal"
+            elif any(k in query.lower() for k in ["chủ đề", "topic"]):
+                entity = "topic"
+            else:
+                entity = "article"
+
+        return ExtractedFilters(
+            year=years[0] if len(years) == 1 else None,
+            date_range=" - ".join(map(str, years)) if len(years) > 1 else None,
+            author=author,
+            keyword=topic,
+            doi=doi_m.group(1) if doi_m else None,
+            target_entity=entity,
+        )
+
+    def _log_and_cache(self, key: str, res: ClassificationResult):
+        """Stage 7: Stores result into LRU cache and writes structured feedback log."""
+        self.cache.set(key, res)
+        logger.info(
+            f"[QueryRouter FeedbackLog] query='{key[:40]}' | engine={res.classification_engine} | "
+            f"cat={res.category.value}:{res.sub_category.value} | conf={res.confidence_score} | "
+            f"latency={res.latency_ms}ms"
+        )
 
     def classify(self, query: str) -> ClassificationResult:
-        """Executes 3-layer classification pipeline:
-        1. Fast-path rule engine (0ms latency, zero token cost)
-        2. In-context LLM router (Gemini 2.5 Flash, structured JSON)
-        3. Production heuristic fallback (resilient against quota limits)
+        """Executes 6-Stage Query Semantic Router (Image 2 Architecture):
+        Stage 1: User Query
+        Stage 2: Preprocess & Normalize (Text cleaning, typo correction, language detection, compression)
+        Stage 3: Rule-based Fast Path (0ms, regex pattern catching)
+        Stage 4: Embedding Classifier (kNN vs few-shot examples via n-gram vectors)
+        Stage 5: LLM Classifier (Fallback for low confidence)
+        Stage 6: Routing Decision (ExecutionPlan assembly)
+        Stage 7: Cache & Feedback Log (LRU caching & execution auditing)
         """
         t0 = time.perf_counter()
-        cleaned_query = query.strip()
 
-        # --- LAYER 1: FAST-PATH RULE ENGINE ---
-        fast_result = self._classify_fastpath(cleaned_query)
+        # Stage 2: Preprocess & normalize
+        raw, normalized, compressed, detected_lang = self._preprocess_and_normalize(query)
+        cache_key = compressed.lower()
+
+        # Stage 7 (Cache check): Instant 0.001ms hit
+        cached_res = self.cache.get(cache_key)
+        if cached_res is not None:
+            hit = cached_res.copy(deep=True)
+            hit.latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+            hit.classification_engine = f"{cached_res.classification_engine}_cache"
+            return hit
+
+        # Stage 3: Rule-based fast path
+        fast_result = self._classify_fastpath(normalized)
+        if fast_result is None and compressed != normalized:
+            fast_result = self._classify_fastpath(compressed)
+
         if fast_result is not None:
+            if not fast_result.execution_plan.rewritten_query:
+                fast_result.execution_plan.rewritten_query = compressed
+            fast_result.detected_language = detected_lang
             fast_result.latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+            self._log_and_cache(cache_key, fast_result)
             return fast_result
 
-        # --- LAYER 2: LLM IN-CONTEXT SEMANTIC ROUTER ---
-        if self.settings.GEMINI_API_KEY:
+        # Stage 4: Embedding classifier (kNN vs few-shot examples)
+        emb_pred = self.embedding_classifier.predict(compressed)
+        if emb_pred is not None:
+            cat_str, sub_cat_str, conf, reasoning, target_entity = emb_pred
             try:
-                res = self._classify_with_llm(cleaned_query)
+                cat = QueryCategory(cat_str)
+                sub_cat = QuerySubCategory(sub_cat_str)
+            except ValueError:
+                cat, sub_cat = QueryCategory.DIRECT_LOOKUP, QuerySubCategory.SEMANTIC_SIMILARITY
+
+            plan = self._build_execution_plan_for_prediction(cat, sub_cat, compressed, target_entity)
+            filters = self._extract_filters_for_prediction(compressed, target_entity)
+            emb_res = ClassificationResult(
+                category=cat,
+                sub_category=sub_cat,
+                confidence_score=conf,
+                reasoning=reasoning,
+                execution_plan=plan,
+                extracted_filters=filters,
+                detected_language=detected_lang,
+                classification_engine="embedding_knn",
+            )
+            emb_res.latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+            self._log_and_cache(cache_key, emb_res)
+            return emb_res
+
+        # Stage 5: LLM classifier (fallback for low-confidence)
+        query_for_llm = compressed if len(compressed) >= 3 else normalized
+        if self.settings.LLM_PROVIDER == "ollama" or self.settings.GEMINI_API_KEY:
+            try:
+                res = self._classify_with_llm(query_for_llm)
+                if not res.execution_plan.rewritten_query:
+                    res.execution_plan.rewritten_query = compressed
+                res.detected_language = detected_lang
                 res.latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+                self._log_and_cache(cache_key, res)
                 return res
             except Exception as e:
-                logger.warning(f"LLM classifier failed or rate-limited, switching to Layer 3 Heuristic: {e}")
+                logger.warning(f"LLM classifier fallback error: {e}")
 
-        # --- LAYER 3: ENTERPRISE HEURISTIC FALLBACK ---
-        res = self._classify_heuristic(cleaned_query)
+        # Stage 6: Heuristic fallback (Routing decision)
+        res = self._classify_heuristic(query_for_llm)
+        if not res.execution_plan.rewritten_query:
+            res.execution_plan.rewritten_query = compressed
+        res.detected_language = detected_lang
         res.latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+        self._log_and_cache(cache_key, res)
         return res
 
     def _classify_fastpath(self, query: str) -> Optional[ClassificationResult]:
@@ -337,84 +639,290 @@ class QueryClassifier:
                 classification_engine="fastpath_rule",
             )
 
+        # Check 4: Count / statistical aggregation fast-path (Articles, Authors, Journals, Topics, Keywords)
+        has_relational = any(kw in lower for kw in self.RELATIONAL_KEYWORDS)
+        is_count_query = any(re.search(pat, lower) for pat in self.COUNT_PATTERNS)
+        if is_count_query and not has_relational:
+            years = sorted(list(set(int(y) for y in re.findall(r"\b(19\d\d|20\d\d)\b", query))))
+            year = years[0] if len(years) == 1 else None
+            topic = self._extract_dynamic_topic(query)
+
+            if any(k in lower for k in ["tác giả", "nhà khoa học", "nghiên cứu viên", "author", "researcher"]):
+                target_entity = "author"
+                store = TargetStore.NEO4J_GRAPH
+                sql_hint = 'SELECT COUNT(*) FROM "Author";'
+                cypher_hint = "MATCH (a:Author) RETURN count(a) AS total_authors;"
+                reasoning = "Nhận diện câu hỏi thống kê số lượng tác giả trong hệ thống (Knowledge Graph Neo4j / PostgreSQL)."
+            elif any(k in lower for k in ["tạp chí", "journal", "nơi xuất bản", "venue"]):
+                target_entity = "journal"
+                store = TargetStore.NEO4J_GRAPH
+                sql_hint = 'SELECT COUNT(*) FROM "Journal";'
+                cypher_hint = "MATCH (j:Journal) RETURN count(j) AS total_journals;"
+                reasoning = "Nhận diện câu hỏi thống kê số lượng tạp chí khoa học trong hệ thống."
+            elif any(k in lower for k in ["chủ đề", "lĩnh vực", "topic", "subject"]):
+                target_entity = "topic"
+                store = TargetStore.NEO4J_GRAPH
+                sql_hint = 'SELECT COUNT(*) FROM "Topic";'
+                cypher_hint = "MATCH (t:Topic) RETURN count(t) AS total_topics;"
+                reasoning = "Nhận diện câu hỏi thống kê số lượng chủ đề nghiên cứu trong hệ thống."
+            elif any(k in lower for k in ["từ khóa", "keyword"]):
+                target_entity = "keyword"
+                store = TargetStore.NEO4J_GRAPH
+                sql_hint = 'SELECT COUNT(*) FROM "Keyword";'
+                cypher_hint = "MATCH (k:Keyword) RETURN count(k) AS total_keywords;"
+                reasoning = "Nhận diện câu hỏi thống kê số lượng từ khóa học thuật."
+            else:
+                target_entity = "article"
+                store = TargetStore.POSTGRESQL_SQL
+                cypher_hint = None
+                sql_hint = f'SELECT COUNT(*) FROM "Article" WHERE publication_year = {year};' if year else 'SELECT COUNT(*) FROM "Article";'
+                reasoning = "Nhận diện câu hỏi thống kê/đếm số lượng bài báo khoa học, tối ưu định tuyến trực tiếp vào PostgreSQL SQL Aggregator."
+
+            return ClassificationResult(
+                category=QueryCategory.DIRECT_LOOKUP,
+                sub_category=QuerySubCategory.SQL_AGGREGATION,
+                confidence_score=0.99,
+                reasoning=reasoning,
+                execution_plan=ExecutionPlan(
+                    requires_sql_aggregation=True,
+                    requires_vector_search=False,
+                    requires_graph_traversal=(target_entity != "article"),
+                    target_store=store,
+                    rewritten_query=query,
+                    suggested_sql=sql_hint,
+                    suggested_cypher=cypher_hint,
+                    recommended_retrievers=["sql_count_retriever" if target_entity == "article" else "graph_retriever"],
+                    top_k=1,
+                ),
+                extracted_filters=ExtractedFilters(
+                    year=year,
+                    date_range=" - ".join(map(str, years)) if years else None,
+                    keyword=topic,
+                    target_entity=target_entity,
+                ),
+                detected_language="vi" if re.search(r"[à-ỹ]", lower) else "en",
+                classification_engine="fastpath_rule",
+            )
+
+        # Check 5: Research Trends / Scientific Direction Reasoning
+        is_trend = any(k in lower for k in [
+            "xu hướng", "hướng nghiên cứu", "phát triển", "tiềm năng", "tương lai",
+            "tiến triển", "trend", "evolution", "future direction", "directions"
+        ])
+        if is_trend:
+            years = sorted(list(set(int(y) for y in re.findall(r"\b(19\d\d|20\d\d)\b", query))))
+            topic = self._extract_dynamic_topic(query)
+            return ClassificationResult(
+                category=QueryCategory.HYBRID,
+                sub_category=QuerySubCategory.TOPIC_CLUSTERING,
+                confidence_score=0.98,
+                reasoning=f"Nhận diện câu hỏi phân tích xu hướng học thuật và định hướng nghiên cứu (chủ đề: '{topic or 'tổng quát'}').",
+                execution_plan=ExecutionPlan(
+                    requires_sql_aggregation=False,
+                    requires_vector_search=True,
+                    requires_graph_traversal=True,
+                    target_store=TargetStore.HYBRID_ALL,
+                    rewritten_query=topic or query,
+                    recommended_retrievers=["hybrid_retriever", "vector_retriever", "graph_retriever"],
+                    top_k=5,
+                ),
+                extracted_filters=ExtractedFilters(
+                    year=years[0] if len(years) == 1 else None,
+                    date_range=" - ".join(map(str, years)) if years else None,
+                    keyword=topic,
+                    target_entity="article",
+                ),
+                detected_language="vi" if re.search(r"[à-ỹ]", lower) else "en",
+                classification_engine="fastpath_rule",
+            )
+
+        # Check 6: Relational / Author Reasoning Fast-Path
+        author_name = self._extract_dynamic_author(query)
+        if has_relational or author_name:
+            years = sorted(list(set(int(y) for y in re.findall(r"\b(19\d\d|20\d\d)\b", query))))
+            topic = self._extract_dynamic_topic(query)
+
+            # Subcase 6A: Hybrid Filtered Graph (filters like year/topic + relational traversal)
+            if has_relational and (years or topic):
+                cypher_hint = (
+                    "MATCH (a1:Author)-[:WRITES]->(art:Article)<-[:WRITES]-(a2:Author) "
+                    f"WHERE art.publication_year >= {years[0] if years else 2020} "
+                    "RETURN a1.name, a2.name, count(art) AS collaborations ORDER BY collaborations DESC LIMIT 5"
+                )
+                return ClassificationResult(
+                    category=QueryCategory.HYBRID,
+                    sub_category=QuerySubCategory.FILTERED_GRAPH,
+                    confidence_score=0.98,
+                    reasoning="Nhận diện truy vấn kết hợp điều kiện lọc (năm/chủ đề) VÀ suy luận quan hệ hợp tác đồ thị.",
+                    execution_plan=ExecutionPlan(
+                        requires_sql_aggregation=False,
+                        requires_vector_search=True,
+                        requires_graph_traversal=True,
+                        target_store=TargetStore.HYBRID_ALL,
+                        rewritten_query=topic or query,
+                        suggested_cypher=cypher_hint,
+                        recommended_retrievers=["graph_retriever", "vector_retriever"],
+                        top_k=5,
+                    ),
+                    extracted_filters=ExtractedFilters(
+                        year=years[0] if len(years) == 1 else None,
+                        date_range=" - ".join(map(str, years)) if years else None,
+                        keyword=topic,
+                        target_entity="author",
+                    ),
+                    detected_language="vi" if re.search(r"[à-ỹ]", lower) else "en",
+                    classification_engine="fastpath_rule",
+                )
+
+            # Subcase 6B: Pure Relational Traversal
+            is_coauthor = any(k in lower for k in ["hợp tác", "đồng tác giả", "cùng viết", "co-author", "collaborat"])
+            sub_cat = QuerySubCategory.CO_AUTHORSHIP if is_coauthor else QuerySubCategory.AUTHOR_PUBLICATIONS
+            cypher = (
+                f"MATCH (a:Author) WHERE toLower(a.name) CONTAINS toLower('{author_name or ''}') "
+                "OPTIONAL MATCH (a)-[:WRITES]->(art:Article) "
+                "OPTIONAL MATCH (a)-[:COLLABORATES_WITH]-(co:Author) "
+                "RETURN a.name, count(art), count(co) LIMIT 10;"
+            )
+            return ClassificationResult(
+                category=QueryCategory.RELATIONAL_REASONING,
+                sub_category=sub_cat,
+                confidence_score=0.98,
+                reasoning=f"Nhận diện câu hỏi suy luận quan hệ tri thức/tác giả (tác giả: '{author_name or 'N/A'}') trên Neo4j Knowledge Graph.",
+                execution_plan=ExecutionPlan(
+                    requires_sql_aggregation=False,
+                    requires_vector_search=False,
+                    requires_graph_traversal=True,
+                    target_store=TargetStore.NEO4J_GRAPH,
+                    rewritten_query=author_name or query,
+                    suggested_cypher=cypher,
+                    recommended_retrievers=["graph_retriever"],
+                    top_k=5,
+                ),
+                extracted_filters=ExtractedFilters(
+                    author=author_name,
+                    year=years[0] if len(years) == 1 else None,
+                    target_entity="author",
+                ),
+                detected_language="vi" if re.search(r"[à-ỹ]", lower) else "en",
+                classification_engine="fastpath_rule",
+            )
+
         return None
 
     def _classify_with_llm(self, query: str) -> ClassificationResult:
-        """Executes LLM In-Context classification using Gemini 2.5 Flash."""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.settings.GEMINI_API_KEY}"
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": f"{CLASSIFIER_PROMPT}\n\nInput Query: \"{query}\"\nOutput JSON:"
-                        }
-                    ]
+        """Executes LLM In-Context classification using Ollama llama3.2:3b or Gemini."""
+        parsed = None
+        if self.settings.LLM_PROVIDER == "ollama" or getattr(self.settings, "OLLAMA_BASE_URL", None):
+            try:
+                ollama_url = f"{self.settings.OLLAMA_BASE_URL.rstrip('/')}/api/generate"
+                payload = {
+                    "model": self.settings.OLLAMA_MODEL or "llama3.2:3b",
+                    "prompt": f"{OLLAMA_CLASSIFIER_PROMPT}\n\nQuery: \"{query}\"\nOutput JSON:",
+                    "format": "json",
+                    "stream": False,
+                    "options": {"temperature": 0.0, "num_predict": 100},
                 }
-            ],
-            "generationConfig": {
-                "temperature": 0.0,
-                "responseMimeType": "application/json",
-            },
-        }
+                req = urllib.request.Request(
+                    ollama_url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=45) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    parsed = json.loads(resp_data.get("response", "{}"))
+            except Exception as e:
+                logger.warning(f"Ollama classification failed: {e}")
 
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+        # Cloud fallback (Gemini) ONLY if provider is not ollama
+        if not parsed and self.settings.LLM_PROVIDER != "ollama" and self.settings.GEMINI_API_KEY:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.settings.GEMINI_API_KEY}"
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": f"{CLASSIFIER_PROMPT}\n\nInput Query: \"{query}\"\nOutput JSON:"
+                            }
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.0,
+                    "responseMimeType": "application/json",
+                },
+            }
+
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                parsed = json.loads(text)
+
+        if not parsed:
+            raise ValueError("No LLM response parsed.")
+
+        cat_str = str(parsed.get("category", "direct_lookup")).lower()
+        try:
+            category = QueryCategory(cat_str)
+        except ValueError:
+            category = QueryCategory.DIRECT_LOOKUP
+
+        sub_str = str(parsed.get("sub_category", "semantic_similarity")).lower()
+        try:
+            sub_category = QuerySubCategory(sub_str)
+        except ValueError:
+            sub_category = QuerySubCategory.SEMANTIC_SIMILARITY
+
+        plan_dict = parsed.get("execution_plan", {})
+        target_str = str(plan_dict.get("target_store", "postgresql_pgvector")).lower()
+        try:
+            target_store = TargetStore(target_str)
+        except ValueError:
+            target_store = TargetStore.POSTGRESQL_PGVECTOR
+
+        execution_plan = ExecutionPlan(
+            requires_sql_aggregation=bool(plan_dict.get("requires_sql_aggregation", False)),
+            requires_vector_search=bool(plan_dict.get("requires_vector_search", True)),
+            requires_graph_traversal=bool(plan_dict.get("requires_graph_traversal", False)),
+            target_store=target_store,
+            rewritten_query=plan_dict.get("rewritten_query"),
+            suggested_cypher=plan_dict.get("suggested_cypher"),
+            suggested_sql=plan_dict.get("suggested_sql"),
+            recommended_retrievers=plan_dict.get("recommended_retrievers", []),
+            top_k=int(plan_dict.get("top_k", 5)),
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
-            parsed = json.loads(text)
 
-            cat_str = str(parsed.get("category", "direct_lookup")).lower()
-            try:
-                category = QueryCategory(cat_str)
-            except ValueError:
-                category = QueryCategory.DIRECT_LOOKUP
+        raw_filters = parsed.get("extracted_filters")
+        if raw_filters and isinstance(raw_filters, dict):
+            y_val = raw_filters.get("year")
+            if y_val is not None:
+                try:
+                    raw_filters["year"] = int(str(y_val).strip())
+                except (ValueError, TypeError):
+                    raw_filters["year"] = None
+        extracted_filters = ExtractedFilters(**raw_filters) if raw_filters else None
+        if extracted_filters and extracted_filters.year:
+            # Guardrail against LLM few-shot example hallucination (e.g. copying '2024')
+            if str(extracted_filters.year) not in query:
+                extracted_filters.year = None
 
-            sub_str = str(parsed.get("sub_category", "semantic_similarity")).lower()
-            try:
-                sub_category = QuerySubCategory(sub_str)
-            except ValueError:
-                sub_category = QuerySubCategory.SEMANTIC_SIMILARITY
+        confidence = float(parsed.get("confidence_score", 0.95))
+        detected_lang = str(parsed.get("detected_language", "vi"))
 
-            plan_dict = parsed.get("execution_plan", {})
-            target_str = str(plan_dict.get("target_store", "postgresql_pgvector")).lower()
-            try:
-                target_store = TargetStore(target_str)
-            except ValueError:
-                target_store = TargetStore.POSTGRESQL_PGVECTOR
-
-            execution_plan = ExecutionPlan(
-                requires_sql_aggregation=bool(plan_dict.get("requires_sql_aggregation", False)),
-                requires_vector_search=bool(plan_dict.get("requires_vector_search", True)),
-                requires_graph_traversal=bool(plan_dict.get("requires_graph_traversal", False)),
-                target_store=target_store,
-                rewritten_query=plan_dict.get("rewritten_query"),
-                suggested_cypher=plan_dict.get("suggested_cypher"),
-                suggested_sql=plan_dict.get("suggested_sql"),
-                recommended_retrievers=plan_dict.get("recommended_retrievers", []),
-                top_k=int(plan_dict.get("top_k", 5)),
-            )
-
-            raw_filters = parsed.get("extracted_filters")
-            extracted_filters = ExtractedFilters(**raw_filters) if raw_filters else None
-
-            confidence = float(parsed.get("confidence_score", 0.95))
-            detected_lang = str(parsed.get("detected_language", "vi"))
-
-            return ClassificationResult(
-                category=category,
-                sub_category=sub_category,
-                confidence_score=confidence,
-                reasoning=str(parsed.get("reasoning", "Phân loại thành công qua Gemini LLM Router.")),
-                execution_plan=execution_plan,
-                extracted_filters=extracted_filters,
-                detected_language=detected_lang,
-                classification_engine="llm_gemini",
-            )
+        return ClassificationResult(
+            category=category,
+            sub_category=sub_category,
+            confidence_score=confidence,
+            reasoning=str(parsed.get("reasoning", f"Phân loại thành công qua {self.settings.LLM_PROVIDER.upper()} Router.")),
+            execution_plan=execution_plan,
+            extracted_filters=extracted_filters,
+            detected_language=detected_lang,
+            classification_engine=f"llm_{self.settings.LLM_PROVIDER}",
+        )
 
     def _classify_heuristic(self, query: str) -> ClassificationResult:
         """Robust, comprehensive heuristic engine ensuring 100% uptime when LLM is unavailable."""
@@ -483,23 +991,44 @@ class QueryClassifier:
 
         has_relational = any(kw in lower_q for kw in self.RELATIONAL_KEYWORDS)
         is_count_query = any(re.search(pat, lower_q) for pat in self.COUNT_PATTERNS)
+        is_trend = any(k in lower_q for k in [
+            "xu hướng", "hướng nghiên cứu", "phát triển", "tiềm năng", "tương lai",
+            "tiến triển", "trend", "evolution", "future direction", "directions"
+        ])
+        dynamic_topic = self._extract_dynamic_topic(query)
+        if dynamic_topic:
+            extracted_filters.keyword = dynamic_topic
 
         # CASE 1: SQL Aggregation (direct_lookup)
         if is_count_query and not has_relational:
-            sql_hint = f'SELECT COUNT(*) FROM "Article" WHERE publication_year = {year};' if year else 'SELECT COUNT(*) FROM "Article";'
+            target_entity = "article"
+            store = TargetStore.POSTGRESQL_SQL
+            if any(k in lower_q for k in ["tác giả", "author"]):
+                target_entity = "author"
+                store = TargetStore.NEO4J_GRAPH
+            elif any(k in lower_q for k in ["tạp chí", "journal"]):
+                target_entity = "journal"
+                store = TargetStore.NEO4J_GRAPH
+            elif any(k in lower_q for k in ["chủ đề", "topic"]):
+                target_entity = "topic"
+                store = TargetStore.NEO4J_GRAPH
+            elif any(k in lower_q for k in ["từ khóa", "keyword"]):
+                target_entity = "keyword"
+                store = TargetStore.NEO4J_GRAPH
+
+            extracted_filters.target_entity = target_entity
             return ClassificationResult(
                 category=QueryCategory.DIRECT_LOOKUP,
                 sub_category=QuerySubCategory.SQL_AGGREGATION,
                 confidence_score=0.95,
-                reasoning="Câu hỏi thống kê số lượng bài báo đơn giản, tối ưu định tuyến trực tiếp vào PostgreSQL SQL Aggregator.",
+                reasoning=f"Câu hỏi thống kê số lượng ({target_entity}), định tuyến tối ưu vào Aggregator.",
                 execution_plan=ExecutionPlan(
                     requires_sql_aggregation=True,
                     requires_vector_search=False,
-                    requires_graph_traversal=False,
-                    target_store=TargetStore.POSTGRESQL_SQL,
+                    requires_graph_traversal=(target_entity != "article"),
+                    target_store=store,
                     rewritten_query=query,
-                    suggested_sql=sql_hint,
-                    recommended_retrievers=["sql_count_retriever"],
+                    recommended_retrievers=["sql_count_retriever" if target_entity == "article" else "graph_retriever"],
                     top_k=1,
                 ),
                 extracted_filters=extracted_filters,
@@ -507,26 +1036,20 @@ class QueryClassifier:
                 classification_engine="heuristic_fallback",
             )
 
-        # CASE 2: Hybrid (Filtered conditions + Graph Traversal)
-        if has_relational and (year or subject or keyword):
-            cypher_hint = (
-                "MATCH (a1:Author)-[:AUTHORED]->(art:Article)<-[:AUTHORED]-(a2:Author) "
-                f"WHERE art.publication_year >= {year or 2020} "
-                "RETURN a1.name, a2.name, count(art) AS collaborations ORDER BY collaborations DESC LIMIT 5"
-            )
+        # CASE 2: Trends & Direction Reasoning (Hybrid Knowledge Graph + Vector / Lexical Search)
+        if is_trend:
             return ClassificationResult(
                 category=QueryCategory.HYBRID,
-                sub_category=QuerySubCategory.FILTERED_GRAPH,
-                confidence_score=0.92,
-                reasoning="Truy vấn kết hợp điều kiện lọc (năm/chủ đề) VÀ suy luận quan hệ hợp tác đồ thị tri thức.",
+                sub_category=QuerySubCategory.TOPIC_CLUSTERING,
+                confidence_score=0.94,
+                reasoning=f"Truy vấn phân tích xu hướng học thuật và định hướng nghiên cứu (chủ đề: '{dynamic_topic or 'tổng quát'}').",
                 execution_plan=ExecutionPlan(
                     requires_sql_aggregation=False,
                     requires_vector_search=True,
                     requires_graph_traversal=True,
                     target_store=TargetStore.HYBRID_ALL,
-                    rewritten_query=query,
-                    suggested_cypher=cypher_hint,
-                    recommended_retrievers=["graph_retriever", "vector_retriever"],
+                    rewritten_query=dynamic_topic or query,
+                    recommended_retrievers=["hybrid_retriever", "vector_retriever", "graph_retriever"],
                     top_k=5,
                 ),
                 extracted_filters=extracted_filters,
@@ -539,7 +1062,7 @@ class QueryClassifier:
             is_coauthor = any(k in lower_q for k in ["hợp tác", "đồng tác giả", "co-author", "collaborat"])
             sub = QuerySubCategory.CO_AUTHORSHIP if is_coauthor else QuerySubCategory.AUTHOR_PUBLICATIONS
             cypher_hint = (
-                f"MATCH (a:Author {{name: '{author or 'Target'}'}})-[:AUTHORED]->(art:Article) RETURN art.title, art.publication_year LIMIT 10"
+                f"MATCH (a:Author {{name: '{author or 'Target'}'}})-[:WRITES]->(art:Article) RETURN art.title, art.publication_year LIMIT 10"
             )
             return ClassificationResult(
                 category=QueryCategory.RELATIONAL_REASONING,
@@ -561,18 +1084,18 @@ class QueryClassifier:
                 classification_engine="heuristic_fallback",
             )
 
-        # CASE 4: Direct Lookup (Semantic Similarity on pgVector)
+        # CASE 4: Direct Lookup (Semantic Similarity on pgVector / Lexical)
         return ClassificationResult(
             category=QueryCategory.DIRECT_LOOKUP,
             sub_category=QuerySubCategory.SEMANTIC_SIMILARITY,
             confidence_score=0.90,
-            reasoning="Truy vấn tìm kiếm nội dung khoa học ngữ nghĩa trên cơ sở dữ liệu vector pgVector.",
+            reasoning="Truy vấn tìm kiếm nội dung khoa học ngữ nghĩa trên cơ sở dữ liệu.",
             execution_plan=ExecutionPlan(
                 requires_sql_aggregation=False,
                 requires_vector_search=True,
                 requires_graph_traversal=False,
                 target_store=TargetStore.POSTGRESQL_PGVECTOR,
-                rewritten_query=query,
+                rewritten_query=dynamic_topic or query,
                 recommended_retrievers=["vector_retriever"],
                 top_k=5,
             ),
@@ -580,4 +1103,5 @@ class QueryClassifier:
             detected_language=detected_lang,
             classification_engine="heuristic_fallback",
         )
+
 
