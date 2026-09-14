@@ -221,6 +221,48 @@
         }
       }
     },
+    "/api/v1/retrieve/classify": {
+      "post": {
+        "tags": [
+          "Phase 3: Retrieval & Reranking"
+        ],
+        "summary": "Classify user query (Query Classification Layer)",
+        "description": "Analyzes the research query into direct_lookup, relational_reasoning, hybrid, or chitchat with routing flags and filters.",
+        "operationId": "classify_query_api_v1_retrieve_classify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/generate": {
       "post": {
         "tags": [
@@ -269,7 +311,7 @@
           "End-to-End RAG Pipeline"
         ],
         "summary": "Chat with RAG pipeline",
-        "description": "Unified entry point. Coordinates retrieval, hybrid search, reranking, context assembly, and LLM generation in-process.",
+        "description": "Unified entry point. Coordinates retrieval, hybrid search, reranking, context assembly, LLM generation, optional chat history recording, and multi-turn context memory.",
         "operationId": "chat_pipeline_api_v1_chat_post",
         "requestBody": {
           "content": {
@@ -304,10 +346,856 @@
           }
         }
       }
+    },
+    "/api/v1/chat/history": {
+      "get": {
+        "tags": [
+          "Chat History"
+        ],
+        "summary": "Get Chat History",
+        "description": "Retrieve paginated conversation history filtered by project_id and/or user_id.",
+        "operationId": "get_chat_history_api_v1_chat_history_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional project ID filter",
+              "title": "Project Id"
+            },
+            "description": "Optional project ID filter"
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional user UUID filter",
+              "title": "User Id"
+            },
+            "description": "Optional user UUID filter"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Max messages to return (1-100)",
+              "default": 50,
+              "title": "Limit"
+            },
+            "description": "Max messages to return (1-100)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset for pagination",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Offset for pagination"
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(asc|desc|ASC|DESC)$",
+              "description": "Sort order by time ('asc' or 'desc')",
+              "default": "asc",
+              "title": "Order"
+            },
+            "description": "Sort order by time ('asc' or 'desc')"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Chat History"
+        ],
+        "summary": "Clear Chat History",
+        "description": "Delete all conversation history for a given project_id and/or user_id.",
+        "operationId": "clear_chat_history_api_v1_chat_history_delete",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Project ID whose history to clear",
+              "title": "Project Id"
+            },
+            "description": "Project ID whose history to clear"
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "User UUID whose history to clear",
+              "title": "User Id"
+            },
+            "description": "User UUID whose history to clear"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/messages": {
+      "post": {
+        "tags": [
+          "Chat History"
+        ],
+        "summary": "Create Chat Message",
+        "description": "Manually create a chat message record (USER, ASSISTANT, or SYSTEM) in conversation history.",
+        "operationId": "create_chat_message_api_v1_chat_messages_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/messages/{message_id}": {
+      "get": {
+        "tags": [
+          "Chat History"
+        ],
+        "summary": "Get Message Detail",
+        "description": "Retrieve details of a single message by ID.",
+        "operationId": "get_message_detail_api_v1_chat_messages__message_id__get",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Message Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Chat History"
+        ],
+        "summary": "Delete Single Message",
+        "description": "Delete a specific chat message by its ID.",
+        "operationId": "delete_chat_message_api_v1_chat_messages__message_id__delete",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Message Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/context": {
+      "get": {
+        "tags": [
+          "Context Memory"
+        ],
+        "summary": "Get Context Memory",
+        "description": "Retrieve the active conversation working memory and entities for a user/project session.",
+        "operationId": "get_context_memory_api_v1_chat_context_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Project ID",
+              "title": "Project Id"
+            },
+            "description": "Project ID"
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "User UUID",
+              "title": "User Id"
+            },
+            "description": "User UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextMemoryState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/context/update": {
+      "post": {
+        "tags": [
+          "Context Memory"
+        ],
+        "summary": "Update Context Memory",
+        "description": "Manually update active focus topic, target publication year, or referenced entities.",
+        "operationId": "update_context_memory_api_v1_chat_context_update_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateContextMemoryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContextMemoryState"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/context/reset": {
+      "post": {
+        "tags": [
+          "Context Memory"
+        ],
+        "summary": "Reset Context Memory",
+        "description": "Clear active working memory and recent conversational turns for a fresh dialogue session.",
+        "operationId": "reset_context_memory_api_v1_chat_context_reset_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Project ID",
+              "title": "Project Id"
+            },
+            "description": "Project ID"
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "User UUID",
+              "title": "User Id"
+            },
+            "description": "User UUID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetContextMemoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "ChatHistoryResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageItem"
+            },
+            "type": "array",
+            "title": "Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ChatHistoryResponse",
+        "description": "Paginated response containing chat history messages."
+      },
+      "ChatMessageCreate": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id",
+            "description": "Associated project ID",
+            "examples": [
+              12
+            ]
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "description": "UUID of the user",
+            "examples": [
+              "550e8400-e29b-41d4-a716-446655440000"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/ChatMessageRole",
+            "description": "Message sender role",
+            "default": "USER"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content",
+            "description": "Message text content"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "LLM model identifier",
+            "examples": [
+              "llama3.2:3b"
+            ]
+          },
+          "prompt_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Prompt Tokens",
+            "default": 0
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completion Tokens",
+            "default": 0
+          },
+          "total_tokens": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Tokens",
+            "default": 0
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChatMessageStatus",
+            "default": "COMPLETED"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "content"
+        ],
+        "title": "ChatMessageCreate",
+        "description": "Payload to create a new chat message record."
+      },
+      "ChatMessageItem": {
+        "properties": {
+          "message_id": {
+            "type": "integer",
+            "title": "Message Id"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "prompt_tokens": {
+            "type": "integer",
+            "title": "Prompt Tokens",
+            "default": 0
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "title": "Completion Tokens",
+            "default": 0
+          },
+          "total_tokens": {
+            "type": "integer",
+            "title": "Total Tokens",
+            "default": 0
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "user_id",
+          "role",
+          "content",
+          "status"
+        ],
+        "title": "ChatMessageItem",
+        "description": "Output representation of a stored chat message."
+      },
+      "ChatMessageRole": {
+        "type": "string",
+        "enum": [
+          "USER",
+          "ASSISTANT",
+          "SYSTEM"
+        ],
+        "title": "ChatMessageRole"
+      },
+      "ChatMessageStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "COMPLETED",
+          "ERROR"
+        ],
+        "title": "ChatMessageStatus"
+      },
+      "ClassificationResult": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/QueryCategory"
+          },
+          "sub_category": {
+            "$ref": "#/components/schemas/QuerySubCategory",
+            "default": "semantic_similarity"
+          },
+          "confidence_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence Score",
+            "description": "Classification confidence (0.0 - 1.0)",
+            "default": 1.0
+          },
+          "reasoning": {
+            "type": "string",
+            "title": "Reasoning",
+            "default": ""
+          },
+          "execution_plan": {
+            "$ref": "#/components/schemas/ExecutionPlan"
+          },
+          "extracted_filters": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtractedFilters"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detected_language": {
+            "type": "string",
+            "title": "Detected Language",
+            "description": "'vi', 'en', or 'other'",
+            "default": "vi"
+          },
+          "classification_engine": {
+            "type": "string",
+            "title": "Classification Engine",
+            "description": "Engine used: fastpath_rule, llm_gemini, or heuristic_fallback",
+            "default": "llm_gemini"
+          },
+          "latency_ms": {
+            "type": "number",
+            "title": "Latency Ms",
+            "default": 0.0
+          }
+        },
+        "type": "object",
+        "required": [
+          "category"
+        ],
+        "title": "ClassificationResult"
+      },
       "ContextItem": {
         "properties": {
           "id": {
@@ -344,6 +1232,11 @@
             "examples": [
               "State of Scientific AI Publications 2026"
             ]
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
           }
         },
         "type": "object",
@@ -351,6 +1244,145 @@
           "content"
         ],
         "title": "ContextItem"
+      },
+      "ContextMemoryState": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "active_topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Topic"
+          },
+          "active_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Year"
+          },
+          "referenced_articles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Referenced Articles"
+          },
+          "referenced_authors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Referenced Authors"
+          },
+          "recent_turns": {
+            "items": {
+              "$ref": "#/components/schemas/DialogueTurn"
+            },
+            "type": "array",
+            "title": "Recent Turns"
+          },
+          "turn_count": {
+            "type": "integer",
+            "title": "Turn Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "ContextMemoryState",
+        "description": "Represents the active working memory and entities for a user session."
+      },
+      "DeleteHistoryResponse": {
+        "properties": {
+          "deleted_count": {
+            "type": "integer",
+            "title": "Deleted Count"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted_count",
+          "message"
+        ],
+        "title": "DeleteHistoryResponse",
+        "description": "Response returned upon deleting chat history."
+      },
+      "DialogueTurn": {
+        "properties": {
+          "turn_id": {
+            "type": "integer",
+            "title": "Turn Id"
+          },
+          "user_query": {
+            "type": "string",
+            "title": "User Query"
+          },
+          "assistant_answer": {
+            "type": "string",
+            "title": "Assistant Answer"
+          },
+          "referenced_articles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Referenced Articles"
+          },
+          "referenced_authors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Referenced Authors"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp"
+          }
+        },
+        "type": "object",
+        "required": [
+          "turn_id",
+          "user_query",
+          "assistant_answer"
+        ],
+        "title": "DialogueTurn",
+        "description": "Represents a single conversational turn between user and assistant."
       },
       "DocumentChunk": {
         "properties": {
@@ -739,6 +1771,186 @@
         "title": "EmbeddingVectorItem",
         "description": "Individual vector output item."
       },
+      "ExecutionPlan": {
+        "properties": {
+          "requires_sql_aggregation": {
+            "type": "boolean",
+            "title": "Requires Sql Aggregation",
+            "default": false
+          },
+          "requires_vector_search": {
+            "type": "boolean",
+            "title": "Requires Vector Search",
+            "default": false
+          },
+          "requires_graph_traversal": {
+            "type": "boolean",
+            "title": "Requires Graph Traversal",
+            "default": false
+          },
+          "target_store": {
+            "$ref": "#/components/schemas/TargetStore",
+            "default": "none"
+          },
+          "rewritten_query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rewritten Query"
+          },
+          "suggested_cypher": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Cypher",
+            "description": "Suggested Cypher query template for Neo4j"
+          },
+          "suggested_sql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Sql",
+            "description": "Suggested SQL query template for PostgreSQL"
+          },
+          "recommended_retrievers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recommended Retrievers"
+          },
+          "top_k": {
+            "type": "integer",
+            "title": "Top K",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "title": "ExecutionPlan"
+      },
+      "ExtractedFilters": {
+        "properties": {
+          "date_range": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Range",
+            "description": "Date or year range, e.g. '2023-01-01_to_2023-12-31' or '>=2020'"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year",
+            "description": "Extracted single target publication year"
+          },
+          "subject_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Category",
+            "description": "Subject category / field of research"
+          },
+          "keyword": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyword",
+            "description": "Key research concepts or terms"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author",
+            "description": "Author name(s)"
+          },
+          "journal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Journal",
+            "description": "Journal or publisher name"
+          },
+          "doi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Doi",
+            "description": "Extracted Digital Object Identifier (DOI)"
+          },
+          "metric": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric",
+            "description": "Statistical metric requirement (e.g. count, citations, rank)"
+          },
+          "target_entity": {
+            "type": "string",
+            "title": "Target Entity",
+            "description": "Target entity type: 'article', 'author', 'journal', 'topic', 'keyword'",
+            "default": "article"
+          }
+        },
+        "type": "object",
+        "title": "ExtractedFilters"
+      },
       "GenerationRequest": {
         "properties": {
           "query": {
@@ -755,7 +1967,6 @@
               "$ref": "#/components/schemas/ContextItem"
             },
             "type": "array",
-            "minItems": 1,
             "title": "Contexts",
             "description": "Context passages to ground the response"
           },
@@ -817,12 +2028,22 @@
               }
             ],
             "title": "System Prompt"
+          },
+          "history_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History Context"
           }
         },
         "type": "object",
         "required": [
-          "query",
-          "contexts"
+          "query"
         ],
         "title": "GenerationRequest",
         "description": "Request schema for generating grounded LLM responses."
@@ -964,6 +2185,34 @@
         "title": "HealthCheckResponse",
         "description": "Standard system health status response."
       },
+      "QueryCategory": {
+        "type": "string",
+        "enum": [
+          "direct_lookup",
+          "relational_reasoning",
+          "hybrid",
+          "chitchat",
+          "clarification_needed"
+        ],
+        "title": "QueryCategory"
+      },
+      "QuerySubCategory": {
+        "type": "string",
+        "enum": [
+          "sql_aggregation",
+          "semantic_similarity",
+          "metadata_lookup",
+          "co_authorship",
+          "author_publications",
+          "citation_network",
+          "venue_indexing",
+          "topic_clustering",
+          "filtered_graph",
+          "chitchat",
+          "ambiguous"
+        ],
+        "title": "QuerySubCategory"
+      },
       "RagPipelineRequest": {
         "properties": {
           "query": {
@@ -1028,6 +2277,45 @@
             "examples": [
               0.7
             ]
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id",
+            "description": "Associated project ID",
+            "examples": [
+              12
+            ]
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id",
+            "description": "UUID of the user",
+            "examples": [
+              "550e8400-e29b-41d4-a716-446655440000"
+            ]
+          },
+          "save_history": {
+            "type": "boolean",
+            "title": "Save History",
+            "description": "Whether to persist conversation history",
+            "default": true,
+            "examples": [
+              true
+            ]
           }
         },
         "type": "object",
@@ -1079,6 +2367,36 @@
             },
             "type": "object",
             "title": "Latency Breakdown"
+          },
+          "user_message_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Message Id",
+            "description": "ID of saved user message",
+            "examples": [
+              101
+            ]
+          },
+          "assistant_message_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assistant Message Id",
+            "description": "ID of saved assistant message",
+            "examples": [
+              102
+            ]
           }
         },
         "type": "object",
@@ -1089,6 +2407,25 @@
         ],
         "title": "RagPipelineResponse",
         "description": "End-to-End unified response with grounded answer, citations, and metrics."
+      },
+      "ResetContextMemoryResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "ResetContextMemoryResponse",
+        "description": "Response returned upon clearing context memory."
       },
       "RetrievalFilter": {
         "properties": {
@@ -1129,6 +2466,21 @@
                 "AI",
                 "Scientometrics"
               ]
+            ]
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id",
+            "description": "Optional Project Scope ID",
+            "examples": [
+              12
             ]
           },
           "metadata": {
@@ -1191,6 +2543,21 @@
             "default": true,
             "examples": [
               true
+            ]
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id",
+            "description": "Scope search to a specific project ID",
+            "examples": [
+              12
             ]
           },
           "filter": {
@@ -1309,6 +2676,110 @@
         ],
         "title": "RetrievedChunk"
       },
+      "TargetStore": {
+        "type": "string",
+        "enum": [
+          "postgresql_sql",
+          "postgresql_pgvector",
+          "neo4j_graph",
+          "hybrid_all",
+          "none"
+        ],
+        "title": "TargetStore"
+      },
+      "UpdateContextMemoryRequest": {
+        "properties": {
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id",
+            "description": "Optional project ID",
+            "examples": [
+              12
+            ]
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id",
+            "description": "UUID of the user",
+            "examples": [
+              "550e8400-e29b-41d4-a716-446655440000"
+            ]
+          },
+          "active_topic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Topic",
+            "description": "Set focus research topic",
+            "examples": [
+              "Graph RAG"
+            ]
+          },
+          "active_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Year",
+            "description": "Set focus publication year",
+            "examples": [
+              2025
+            ]
+          },
+          "referenced_articles": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referenced Articles",
+            "description": "List of focus article titles"
+          },
+          "referenced_authors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referenced Authors",
+            "description": "List of focus authors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "UpdateContextMemoryRequest",
+        "description": "Payload to manually update the active context memory state."
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -1332,13 +2803,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",

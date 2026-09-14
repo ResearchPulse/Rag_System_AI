@@ -9,6 +9,7 @@ Validates the 4 official categories:
 
 import json
 import sys
+sys.path.insert(0, ".")
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 

@@ -1,0 +1,65 @@
+id: "ROB-01"
+tier: "robustness"
+category: "culinary_ood"
+query: "Công thức và thời gian ninh xương nấu nước dùng phở bò truyền thống chuẩn vị Hà Nội là gì?"
+expected_doc_ids: []
+reference_answer: "Hệ thống phải từ chối trả lời vì cơ sở dữ liệu không chứa công thức ẩm thực hay nấu ăn."
+reference_solution:
+  expected_behavior: "refusal"
+graders:
+  - name: "robustness"
+---
+id: "ROB-02"
+tier: "robustness"
+category: "celebrity_gossip_ood"
+query: "Nam diễn viên Tom Cruise đã đạt bao nhiêu giải Oscar trong sự nghiệp điện ảnh của mình?"
+expected_doc_ids: []
+reference_answer: "Hệ thống phải từ chối vì câu hỏi thuộc lĩnh vực giải trí/điện ảnh, không có trong các bài báo khoa học."
+reference_solution:
+  expected_behavior: "refusal"
+graders:
+  - name: "robustness"
+---
+id: "ROB-03"
+tier: "robustness"
+category: "real_estate_ood"
+query: "Giá đất nền tại khu đô thị Thủ Thiêm Quận 2 hiện tại năm nay trung bình bao nhiêu triệu một mét vuông?"
+expected_doc_ids: []
+reference_answer: "Hệ thống phải từ chối vì không chứa thông tin về bảng giá bất động sản thị trường."
+reference_solution:
+  expected_behavior: "refusal"
+graders:
+  - name: "robustness"
+---
+id: "ROB-04"
+tier: "robustness"
+category: "weather_ood"
+query: "Dự báo thời tiết chi tiết tại Đà Lạt trong 3 ngày cuối tuần tới có mưa không?"
+expected_doc_ids: []
+reference_answer: "Hệ thống phải từ chối vì không phải hệ thống dự báo khí tượng thời gian thực."
+reference_solution:
+  expected_behavior: "refusal"
+graders:
+  - name: "robustness"
+---
+id: "ROB-05"
+tier: "robustness"
+category: "sports_ood"
+query: "Đội tuyển bóng đá nào đã vô địch UEFA Champions League mùa giải 2023-2024 và tỷ số trận chung kết là bao nhiêu?"
+expected_doc_ids: []
+reference_answer: "Hệ thống phải từ chối vì cơ sở dữ liệu không có thông tin kết quả thể thao bóng đá."
+reference_solution:
+  expected_behavior: "refusal"
+graders:
+  - name: "robustness"
+---
+id: "ROB-06"
+tier: "robustness"
+category: "fictional_unanswerable"
+query: "Phương pháp chế tạo động cơ nhảy cóc không gian (Warp Drive) theo nguyên lý phản vật chất của phi thuyền Enterprise?"
+expected_doc_ids: []
+reference_answer: "Hệ thống phải từ chối vì đây là công nghệ khoa học viễn tưởng không có trong nghiên cứu khoa học thực tế của hệ thống."
+reference_solution:
+  expected_behavior: "refusal"
+graders:
+  - name: "robustness"

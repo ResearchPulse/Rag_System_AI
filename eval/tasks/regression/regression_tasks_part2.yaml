@@ -1,0 +1,99 @@
+id: "REG-06"
+tier: "regression"
+category: "semantic_segmentation"
+query: "Bài báo về Fully Convolutional Networks (FCN) mang lại cải tiến gì cho bài toán phân vùng ngữ nghĩa?"
+expected_doc_ids:
+  - "doc_6253"
+reference_answer: "FCN huấn luyện mạng nơ-ron tích chập end-to-end (pixels-to-pixels) trên ảnh có kích thước tùy ý, vượt trội hơn các phương pháp phân vùng ngữ nghĩa trước đó."
+reference_solution:
+  known_article_title: "Fully Convolutional Networks for Semantic Segmentation"
+  keywords: ["end-to-end", "pixels-to-pixels", "semantic segmentation"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "REG-07"
+tier: "regression"
+category: "super_resolution"
+query: "Nghiên cứu về Image Super-Resolution Using Deep Convolutional Networks học ánh xạ giữa ảnh độ phân giải thấp và cao ra sao?"
+expected_doc_ids:
+  - "doc_1021112"
+reference_answer: "SRCNN trực tiếp học ánh xạ đầu-cuối (end-to-end mapping) giữa ảnh độ phân giải thấp và độ phân giải cao thông qua một mạng nơ-ron tích chập sâu."
+reference_solution:
+  known_article_title: "Image Super-Resolution Using Deep Convolutional Networks"
+  keywords: ["end-to-end mapping", "low/high-resolution", "super-resolution"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "REG-08"
+tier: "regression"
+category: "material_engineering"
+query: "Bài báo về biến cứng của thép 316L sử dụng loại thí nghiệm nào?"
+expected_doc_ids:
+  - "doc_1018934"
+reference_answer: "Nghiên cứu sử dụng các thí nghiệm kéo-nén theo chu kỳ để đánh giá hành vi đàn dẻo và mô phỏng số ứng xử cơ học của thép 316L."
+reference_solution:
+  known_article_title: "Nghiên cứu thực nghiệm và mô phỏng số ứng xử biến cứng của thép 316L"
+  keywords: ["thép 316L", "kéo-nén chu kỳ", "biến cứng"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "REG-09"
+tier: "regression"
+category: "environmental_treatment"
+query: "Bài báo về zeolite A tổng hợp từ tro bay nhiệt điện được ứng dụng để xử lý chất ô nhiễm nào trong nước thải?"
+expected_doc_ids:
+  - "doc_1018852"
+reference_answer: "Zeolite A tổng hợp từ tro bay nhiệt điện dạng hạt được ứng dụng trong mô hình cột liên tục để xử lý amoni trong nước thải."
+reference_solution:
+  known_article_title: "Treatment of amoni in wastewater by continuous column model using zeolite A synthesized from coal fly ash"
+  keywords: ["zeolite A", "tro bay", "amoni", "nước thải"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"
+---
+id: "REG-10"
+tier: "regression"
+category: "mechanical_engineering"
+query: "Bài báo về điều khiển chống dao động tải trọng cho hệ cầu trục con lắc đơn dựa trên lý thuyết nào?"
+expected_doc_ids:
+  - "doc_1018912"
+reference_answer: "Bộ điều khiển chuyển động tối ưu thời gian cho hệ thống cầu trục con lắc đơn được đề xuất dựa trên lý thuyết phẳng (flatness-based control) để di chuyển tải trọng đến vị trí mong muốn và giảm thiểu dao động."
+reference_solution:
+  known_article_title: "Thiết lập quỹ đạo chuyển động và điều khiển chống dao động tải trọng cho hệ cầu trục"
+  keywords: ["cầu trục con lắc đơn", "lý thuyết phẳng", "dao động tải trọng"]
+graders:
+  - name: "retrieval"
+    params:
+      thresholds:
+        recall@5: 1.0
+        precision@3: 0.33
+  - name: "groundedness"
+  - name: "coverage"
+  - name: "language_relevance"

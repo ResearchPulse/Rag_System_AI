@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 class RetrievalFilter(BaseModel):
     document_ids: Optional[List[str]] = Field(default=None, examples=[["doc_998877"]])
     categories: Optional[List[str]] = Field(default=None, examples=[["AI", "Scientometrics"]])
+    project_id: Optional[int] = Field(default=None, description="Optional Project Scope ID", examples=[12])
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -19,7 +20,9 @@ class RetrievalRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=50, examples=[5])
     score_threshold: Optional[float] = Field(default=0.5, ge=0.0, le=1.0, examples=[0.5])
     rerank: bool = Field(default=True, examples=[True])
+    project_id: Optional[int] = Field(default=None, description="Scope search to a specific project ID", examples=[12])
     filter: Optional[RetrievalFilter] = None
+
 
 
 class RetrievedChunk(BaseModel):

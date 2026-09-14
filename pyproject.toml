@@ -26,6 +26,9 @@ pytest-asyncio = "^0.23.7"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = ["tool-crawl-scimago", "scripts", ".venv"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
 
 [build-system]
 requires = ["poetry-core"]
