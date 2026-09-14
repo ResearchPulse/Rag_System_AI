@@ -46,11 +46,13 @@ class Settings(BaseSettings):
     DEFAULT_SCORE_THRESHOLD: float = 0.5
     ENABLE_RERANKING: bool = True
 
-    # Phase 4: Generation
-    LLM_PROVIDER: str = "mock"
-    LLM_MODEL: str = "gpt-4o-mini"
+    # Phase 4: Generation (Local Ollama & Cloud Fallbacks)
+    LLM_PROVIDER: str = "ollama"
+    LLM_MODEL: str = "llama3.2:3b"
     LLM_TEMPERATURE: float = 0.7
     LLM_MAX_TOKENS: int = 1024
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2:3b"
     OPENAI_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
 

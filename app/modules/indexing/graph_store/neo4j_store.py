@@ -36,6 +36,18 @@ class Neo4jGraphStore(BaseGraphStore):
                 self._driver = None
         return self._driver
 
+    def close(self) -> None:
+        """Closes the active Neo4j driver connection."""
+        if self._driver is not None:
+            try:
+                self._driver.close()
+            except Exception:
+                pass
+            self._driver = None
+
+    def __del__(self) -> None:
+        self.close()
+
     async def add_node(self, label: str, node_id: str, properties: Dict[str, Any]) -> bool:
         driver = self.get_driver()
         if driver is None:
