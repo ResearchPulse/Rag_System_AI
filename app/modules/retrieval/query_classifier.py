@@ -216,14 +216,16 @@ TUYỆT ĐỐI KHÔNG trả lời trực tiếp nội dung câu hỏi.
 
 OLLAMA_CLASSIFIER_PROMPT = """Phân loại câu hỏi nghiên cứu khoa học vào đúng 1 JSON object:
 Categories:
-- "direct_lookup" (sub: "sql_aggregation" nếu đếm/thống kê số lượng; "semantic_similarity" nếu tìm nội dung, khái niệm; "metadata_lookup" nếu mã DOI)
-- "relational_reasoning" (sub: "co_authorship" nếu hỏi đồng tác giả, hợp tác; "author_publications" nếu hỏi bài báo của tác giả)
+- "direct_lookup" (sub: "sql_aggregation" nếu đếm/thống kê số lượng tác giả, bài báo, tạp chí, trích dẫn, xếp hạng top; "semantic_similarity" nếu tìm nội dung, khái niệm; "metadata_lookup" nếu mã DOI)
+- "relational_reasoning" (sub: "co_authorship" nếu hỏi ai hợp tác với ai, ai là đồng tác giả; "author_publications" nếu hỏi bài báo do ai viết)
 - "hybrid" (sub: "topic_clustering" nếu hỏi xu hướng nghiên cứu; "filtered_graph" nếu vừa lọc năm/chủ đề vừa hỏi quan hệ)
 - "chitchat" (sub: "chitchat" nếu chào hỏi xã giao)
 - "clarification_needed" (sub: "ambiguous" nếu quá ngắn/không rõ ý)
 
+QUY TẮC BẮT BUỘC: Nếu câu hỏi hỏi SỐ LƯỢNG / ĐẾM / BAO NHIÊU / TỔNG SỐ / TOP / NHIỀU NHẤT về tác giả (author), bài báo (paper), tạp chí (journal), đề tài/dự án (project) -> BẮT BUỘC chọn "direct_lookup" và "sql_aggregation". KHÔNG ĐƯỢC chọn "relational_reasoning".
+
 Ví dụ định dạng trả về (CHỈ JSON):
-{"category": "hybrid", "sub_category": "topic_clustering", "extracted_filters": {"keyword": "RAG", "year": 2024}}"""
+{"category": "direct_lookup", "sub_category": "sql_aggregation", "extracted_filters": {"target_entity": "author"}}"""
 
 
 class QueryRoutingCache:
@@ -272,18 +274,16 @@ class QueryClassifier:
 
     DOI_PATTERN = re.compile(r"\b(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)\b")
 
-    COUNT_PATTERNS = [
-        r"(tổng\s*(số)?\s*(lượng)?|số\s*lượng|bao\s*nhiêu|thống\s*kê|đếm|tổng\s*cộng)\s*(bài\s*báo|công\s*bố|nghiên\s*cứu|tác\s*phẩm|tạp\s*chí|tác\s*giả|chủ\s*đề|lĩnh\s*vực|từ\s*khóa|paper|article|author|journal|topic|keyword)",
-        r"\b(bao nhiêu (bài|tác giả|tạp chí|chủ đề|từ khóa)|how many (articles|papers|authors|journals|topics)|thống kê số lượng|đếm số (bài|tác giả|tạp chí|chủ đề))\b",
-        r"\b(count|total number of|number of (papers|articles|authors|journals|topics))\b",
-        r"(tổng\s*(số)?|số\s*lượng|thống\s*kê)\s+.*(20\d\d|19\d\d|tác\s*giả|tạp\s*chí|chủ\s*đề)",
+    GENUINE_RELATIONAL_PATTERNS = [
+        r"\b(hợp\s*tác\s*(với|cùng)?|đồng\s*tác\s*giả|co-author|collaborat)\b",
+        r"\b(mạng\s*lưới\s*(trích\s*dẫn|tác\s*giả|hợp\s*tác)|citation\s*network)\b",
+        r"\b(ai\s*viết\s*cùng|liên\s*kết\s*tác\s*giả|kết\s*nối\s*tác\s*giả)\b",
     ]
 
     RELATIONAL_KEYWORDS = [
-        "hợp tác", "đồng tác giả", "co-author", "collaborat", "ai viết",
-        "who wrote", "trích dẫn", "citation", "cites", "mạng lưới trích dẫn",
-        "mạng lưới tác giả", "mạng lưới hợp tác", "citation network",
-        "quan hệ", "relationship", "liên kết tác giả", "kết nối tác giả", "ảnh hưởng lớn nhất",
+        "hợp tác", "đồng tác giả", "co-author", "collaborat", "ai viết cùng",
+        "mạng lưới trích dẫn", "mạng lưới tác giả", "mạng lưới hợp tác", "citation network",
+        "liên kết tác giả", "kết nối tác giả",
     ]
 
     def __init__(self) -> None:
@@ -339,7 +339,11 @@ class QueryClassifier:
         )
         if m:
             cand = m.group(1).strip()
-            if cand.lower() not in ["nào", "ai", "mấy", "gì", "những ai", "bao nhiêu", "nghiên cứu", "khoa học"]:
+            cand_lower = cand.lower()
+            stop_words = {"nào", "ai", "mấy", "gì", "những ai", "bao nhiêu", "nghiên cứu", "khoa học", "đang", "là", "đang là", "nào đang"}
+            if cand_lower in stop_words or any(w in cand_lower.split() for w in ["nào", "ai", "gì", "mấy", "đang", "bao"]):
+                return None
+            if len(cand) >= 3:
                 return cand
         return None
 
@@ -359,7 +363,6 @@ class QueryClassifier:
         typo_maps = [
             (r"\btác\s*giác\b", "tác giả"),
             (r"\bbài\s*bao\b", "bài báo"),
-            (r"\btạp\s*chí\s*nào\b", "tạp chí"),
             (r"\bnhà\s*khoa\s*học\b", "tác giả"),
             (r"\bnghiên\s*cứu\s*viên\b", "tác giả"),
         ]
@@ -385,17 +388,14 @@ class QueryClassifier:
         author = self._extract_dynamic_author(query)
 
         if sub_category == QuerySubCategory.SQL_AGGREGATION:
-            is_author = target_entity == "author" or any(k in query.lower() for k in ["tác giả", "author", "nhà khoa học"])
-            sql = 'SELECT COUNT(*) FROM "Author";' if is_author else 'SELECT COUNT(*) FROM "Article";'
-            cypher = "MATCH (a:Author) RETURN count(a) AS total_authors;" if is_author else None
             return ExecutionPlan(
                 requires_sql_aggregation=True,
                 requires_vector_search=False,
-                requires_graph_traversal=is_author,
-                target_store=TargetStore.POSTGRESQL_SQL if not is_author else TargetStore.NEO4J_GRAPH,
+                requires_graph_traversal=False,
+                target_store=TargetStore.POSTGRESQL_SQL,
                 rewritten_query=query,
-                suggested_sql=sql,
-                suggested_cypher=cypher,
+                suggested_sql='SELECT COUNT(*) FROM "Article";',
+                suggested_cypher=None,
                 recommended_retrievers=["sql_aggregation_retriever"],
                 top_k=1,
             )
@@ -455,12 +455,17 @@ class QueryClassifier:
 
         entity = target_entity
         if not entity:
-            if any(k in query.lower() for k in ["tác giả", "author"]):
+            lower = query.lower()
+            if any(k in lower for k in ["tác giả", "author", "nhà khoa học"]):
                 entity = "author"
-            elif any(k in query.lower() for k in ["tạp chí", "journal"]):
+            elif any(k in lower for k in ["tạp chí", "journal"]):
                 entity = "journal"
-            elif any(k in query.lower() for k in ["chủ đề", "topic"]):
+            elif any(k in lower for k in ["chủ đề", "topic", "lĩnh vực"]):
                 entity = "topic"
+            elif any(k in lower for k in ["từ khóa", "keyword"]):
+                entity = "keyword"
+            elif any(k in lower for k in ["quốc gia", "country", "nước"]):
+                entity = "country"
             else:
                 entity = "article"
 
@@ -639,72 +644,56 @@ class QueryClassifier:
                 classification_engine="fastpath_rule",
             )
 
-        # Check 4: Count / statistical aggregation fast-path (Articles, Authors, Journals, Topics, Keywords)
-        has_relational = any(kw in lower for kw in self.RELATIONAL_KEYWORDS)
-        is_count_query = any(re.search(pat, lower) for pat in self.COUNT_PATTERNS)
-        if is_count_query and not has_relational:
-            years = sorted(list(set(int(y) for y in re.findall(r"\b(19\d\d|20\d\d)\b", query))))
-            year = years[0] if len(years) == 1 else None
-            topic = self._extract_dynamic_topic(query)
-
-            if any(k in lower for k in ["tác giả", "nhà khoa học", "nghiên cứu viên", "author", "researcher"]):
+        # Check 3B: SQL Aggregation / Statistical Counts / Rankings Fast-Path (0.001ms)
+        is_stat_or_ranking = any(k in lower for k in [
+            "bao nhiêu", "bao nhieu", "số lượng", "so luong", "tổng số", "tong so",
+            "mấy", "may", "how many", "count", "total number", "cao nhất", "cao nhat",
+            "nhiều nhất", "nhieu nhat", "lớn nhất", "lon nhat", "dẫn đầu", "dan dau",
+            "hàng đầu", "hang dau", "top", "đếm", "dem", "thống kê", "thong ke"
+        ])
+        is_genuine_relational = any(re.search(pat, lower) for pat in self.GENUINE_RELATIONAL_PATTERNS)
+        if is_stat_or_ranking and not is_genuine_relational:
+            target_entity = "article"
+            if any(k in lower for k in ["tác giả", "author", "nhà khoa học"]):
                 target_entity = "author"
-                store = TargetStore.NEO4J_GRAPH
-                sql_hint = 'SELECT COUNT(*) FROM "Author";'
-                cypher_hint = "MATCH (a:Author) RETURN count(a) AS total_authors;"
-                reasoning = "Nhận diện câu hỏi thống kê số lượng tác giả trong hệ thống (Knowledge Graph Neo4j / PostgreSQL)."
-            elif any(k in lower for k in ["tạp chí", "journal", "nơi xuất bản", "venue"]):
+            elif any(k in lower for k in ["tạp chí", "journal"]):
                 target_entity = "journal"
-                store = TargetStore.NEO4J_GRAPH
-                sql_hint = 'SELECT COUNT(*) FROM "Journal";'
-                cypher_hint = "MATCH (j:Journal) RETURN count(j) AS total_journals;"
-                reasoning = "Nhận diện câu hỏi thống kê số lượng tạp chí khoa học trong hệ thống."
-            elif any(k in lower for k in ["chủ đề", "lĩnh vực", "topic", "subject"]):
+            elif any(k in lower for k in ["chủ đề", "topic", "lĩnh vực"]):
                 target_entity = "topic"
-                store = TargetStore.NEO4J_GRAPH
-                sql_hint = 'SELECT COUNT(*) FROM "Topic";'
-                cypher_hint = "MATCH (t:Topic) RETURN count(t) AS total_topics;"
-                reasoning = "Nhận diện câu hỏi thống kê số lượng chủ đề nghiên cứu trong hệ thống."
             elif any(k in lower for k in ["từ khóa", "keyword"]):
                 target_entity = "keyword"
-                store = TargetStore.NEO4J_GRAPH
-                sql_hint = 'SELECT COUNT(*) FROM "Keyword";'
-                cypher_hint = "MATCH (k:Keyword) RETURN count(k) AS total_keywords;"
-                reasoning = "Nhận diện câu hỏi thống kê số lượng từ khóa học thuật."
-            else:
-                target_entity = "article"
-                store = TargetStore.POSTGRESQL_SQL
-                cypher_hint = None
-                sql_hint = f'SELECT COUNT(*) FROM "Article" WHERE publication_year = {year};' if year else 'SELECT COUNT(*) FROM "Article";'
-                reasoning = "Nhận diện câu hỏi thống kê/đếm số lượng bài báo khoa học, tối ưu định tuyến trực tiếp vào PostgreSQL SQL Aggregator."
+            elif any(k in lower for k in ["quốc gia", "country", "nước"]):
+                target_entity = "country"
 
+            years = sorted(list(set(int(y) for y in re.findall(r"\b(19\d\d|20\d\d)\b", query))))
+            dynamic_topic = self._extract_dynamic_topic(query)
+            extracted_filters = ExtractedFilters(
+                year=years[0] if len(years) == 1 else None,
+                date_range=" - ".join(map(str, years)) if len(years) > 1 else None,
+                keyword=dynamic_topic,
+                target_entity=target_entity,
+            )
             return ClassificationResult(
                 category=QueryCategory.DIRECT_LOOKUP,
                 sub_category=QuerySubCategory.SQL_AGGREGATION,
                 confidence_score=0.99,
-                reasoning=reasoning,
+                reasoning=f"Nhận diện câu hỏi thống kê/xếp hạng ({target_entity}) qua Fast-Path Rule Engine, định tuyến tức thì sang Text-to-SQL PostgreSQL.",
                 execution_plan=ExecutionPlan(
                     requires_sql_aggregation=True,
                     requires_vector_search=False,
-                    requires_graph_traversal=(target_entity != "article"),
-                    target_store=store,
+                    requires_graph_traversal=False,
+                    target_store=TargetStore.POSTGRESQL_SQL,
                     rewritten_query=query,
-                    suggested_sql=sql_hint,
-                    suggested_cypher=cypher_hint,
-                    recommended_retrievers=["sql_count_retriever" if target_entity == "article" else "graph_retriever"],
+                    suggested_sql='SELECT COUNT(*) FROM "Article";',
+                    recommended_retrievers=["text_to_sql_retriever"],
                     top_k=1,
                 ),
-                extracted_filters=ExtractedFilters(
-                    year=year,
-                    date_range=" - ".join(map(str, years)) if years else None,
-                    keyword=topic,
-                    target_entity=target_entity,
-                ),
+                extracted_filters=extracted_filters,
                 detected_language="vi" if re.search(r"[à-ỹ]", lower) else "en",
                 classification_engine="fastpath_rule",
             )
 
-        # Check 5: Research Trends / Scientific Direction Reasoning
+        # Check 4: Research Trends / Scientific Direction Reasoning
         is_trend = any(k in lower for k in [
             "xu hướng", "hướng nghiên cứu", "phát triển", "tiềm năng", "tương lai",
             "tiến triển", "trend", "evolution", "future direction", "directions"
@@ -736,9 +725,16 @@ class QueryClassifier:
                 classification_engine="fastpath_rule",
             )
 
-        # Check 6: Relational / Author Reasoning Fast-Path
+        # Check 5: Relational / Author Reasoning Fast-Path
+        is_genuine_relational = any(re.search(pat, lower) for pat in self.GENUINE_RELATIONAL_PATTERNS)
+        has_relational = is_genuine_relational or any(kw in lower for kw in self.RELATIONAL_KEYWORDS)
         author_name = self._extract_dynamic_author(query)
-        if has_relational or author_name:
+        is_stat_or_ranking = any(k in lower for k in [
+            "cao nhất", "cao nhat", "nhiều nhất", "nhieu nhat", "lớn nhất", "lon nhat",
+            "dẫn đầu", "dan dau", "hàng đầu", "hang dau", "bao nhiêu", "bao nhieu",
+            "tổng số", "tong so", "mấy", "may", "top", "đếm", "dem", "thống kê", "thong ke"
+        ])
+        if (has_relational or author_name) and not (is_stat_or_ranking and not is_genuine_relational):
             years = sorted(list(set(int(y) for y in re.findall(r"\b(19\d\d|20\d\d)\b", query))))
             topic = self._extract_dynamic_topic(query)
 
@@ -913,6 +909,24 @@ class QueryClassifier:
         confidence = float(parsed.get("confidence_score", 0.95))
         detected_lang = str(parsed.get("detected_language", "vi"))
 
+        # Guardrail: Override misclassified count/ranking queries
+        lower_q = query.lower()
+        is_stat_or_ranking = any(k in lower_q for k in [
+            "bao nhiêu", "bao nhieu", "số lượng", "so luong", "tổng số", "tong so",
+            "mấy", "may", "how many", "count", "total number", "cao nhất", "cao nhat",
+            "nhiều nhất", "nhieu nhat", "lớn nhất", "lon nhat", "dẫn đầu", "dan dau",
+            "hàng đầu", "hang dau", "top", "đếm", "dem", "thống kê", "thong ke"
+        ])
+        is_genuine_relational = any(re.search(pat, lower_q) for pat in self.GENUINE_RELATIONAL_PATTERNS)
+        if is_stat_or_ranking and not is_genuine_relational and (category != QueryCategory.DIRECT_LOOKUP or sub_category != QuerySubCategory.SQL_AGGREGATION):
+            category = QueryCategory.DIRECT_LOOKUP
+            sub_category = QuerySubCategory.SQL_AGGREGATION
+            execution_plan.requires_sql_aggregation = True
+            execution_plan.requires_vector_search = False
+            execution_plan.requires_graph_traversal = False
+            execution_plan.target_store = TargetStore.POSTGRESQL_SQL
+            execution_plan.recommended_retrievers = ["text_to_sql_retriever"]
+
         return ClassificationResult(
             category=category,
             sub_category=sub_category,
@@ -990,7 +1004,10 @@ class QueryClassifier:
         )
 
         has_relational = any(kw in lower_q for kw in self.RELATIONAL_KEYWORDS)
-        is_count_query = any(re.search(pat, lower_q) for pat in self.COUNT_PATTERNS)
+        is_count_query = any(k in lower_q for k in [
+            "bao nhiêu", "bao nhieu", "số lượng", "so luong", "tổng số", "tong so",
+            "mấy", "may", "how many", "count", "total number", "cao nhất", "nhiều nhất", "top"
+        ])
         is_trend = any(k in lower_q for k in [
             "xu hướng", "hướng nghiên cứu", "phát triển", "tiềm năng", "tương lai",
             "tiến triển", "trend", "evolution", "future direction", "directions"
@@ -999,36 +1016,34 @@ class QueryClassifier:
         if dynamic_topic:
             extracted_filters.keyword = dynamic_topic
 
-        # CASE 1: SQL Aggregation (direct_lookup)
+        # CASE 1: SQL Aggregation (direct_lookup) -> Routes to dynamic Text-to-SQL
         if is_count_query and not has_relational:
             target_entity = "article"
-            store = TargetStore.POSTGRESQL_SQL
-            if any(k in lower_q for k in ["tác giả", "author"]):
+            if any(k in lower_q for k in ["tác giả", "author", "nhà khoa học"]):
                 target_entity = "author"
-                store = TargetStore.NEO4J_GRAPH
             elif any(k in lower_q for k in ["tạp chí", "journal"]):
                 target_entity = "journal"
-                store = TargetStore.NEO4J_GRAPH
-            elif any(k in lower_q for k in ["chủ đề", "topic"]):
+            elif any(k in lower_q for k in ["chủ đề", "topic", "lĩnh vực"]):
                 target_entity = "topic"
-                store = TargetStore.NEO4J_GRAPH
             elif any(k in lower_q for k in ["từ khóa", "keyword"]):
                 target_entity = "keyword"
-                store = TargetStore.NEO4J_GRAPH
+            elif any(k in lower_q for k in ["quốc gia", "country", "nước"]):
+                target_entity = "country"
 
             extracted_filters.target_entity = target_entity
             return ClassificationResult(
                 category=QueryCategory.DIRECT_LOOKUP,
                 sub_category=QuerySubCategory.SQL_AGGREGATION,
                 confidence_score=0.95,
-                reasoning=f"Câu hỏi thống kê số lượng ({target_entity}), định tuyến tối ưu vào Aggregator.",
+                reasoning=f"Câu hỏi thống kê/xếp hạng ({target_entity}), định tuyến tối ưu vào Text-to-SQL PostgreSQL.",
                 execution_plan=ExecutionPlan(
                     requires_sql_aggregation=True,
                     requires_vector_search=False,
-                    requires_graph_traversal=(target_entity != "article"),
-                    target_store=store,
+                    requires_graph_traversal=False,
+                    target_store=TargetStore.POSTGRESQL_SQL,
                     rewritten_query=query,
-                    recommended_retrievers=["sql_count_retriever" if target_entity == "article" else "graph_retriever"],
+                    suggested_sql='SELECT COUNT(*) FROM "Article";',
+                    recommended_retrievers=["text_to_sql_retriever"],
                     top_k=1,
                 ),
                 extracted_filters=extracted_filters,
