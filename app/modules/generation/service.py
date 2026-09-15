@@ -71,11 +71,19 @@ class GenerationService:
         answer = ""
         compressed_q = QueryCompressor.compress_query(request.query)
 
-        # Compact context blocks: top 4 contexts, max 350 chars each to prevent token bloat
+        # Compact context blocks: top 4 contexts
         context_blocks = []
         for idx, ctx in enumerate(request.contexts[:4], 1):
             src = ctx.source or f"Nguồn {idx}"
-            compact_content = QueryCompressor.compress_context(ctx.content, max_chars=350)
+            is_stat_agg = (
+                isinstance(ctx.metadata, dict)
+                and (ctx.metadata.get("type") == "Aggregation" or ctx.metadata.get("source") == "postgresql_sql")
+            )
+            if is_stat_agg:
+                # Keep structured statistical tables & rankings intact without flattening newlines
+                compact_content = ctx.content[:1500].strip()
+            else:
+                compact_content = QueryCompressor.compress_context(ctx.content, max_chars=350)
             context_blocks.append(f"[{idx}] {src}:\n{compact_content}")
         context_str = "\n\n".join(context_blocks)
         history_str = f"\n\n{request.history_context}\n" if getattr(request, "history_context", None) else ""
@@ -83,7 +91,8 @@ class GenerationService:
         is_ollama = (self.settings.LLM_PROVIDER == "ollama" or getattr(self.settings, "OLLAMA_BASE_URL", None))
         if is_ollama:
             prompt = (
-                "Bạn là trợ lý AI học thuật ResearchPulse. Dựa vào tài liệu dưới đây, hãy trả lời súc tích, chính xác bằng tiếng Việt:\n\n"
+                "Bạn là trợ lý AI học thuật ResearchPulse. Dựa vào TÀI LIỆU dưới đây, hãy trả lời súc tích, chính xác bằng tiếng Việt.\n"
+                "QUY TẮC QUAN TRỌNG: Nếu trong TÀI LIỆU có bảng hoặc con số thống kê, BẮT BUỘC dùng đúng con số đó, tuyệt đối không tự bịa số liệu.\n\n"
                 f"--- TÀI LIỆU ---\n{context_str}\n"
                 f"{history_str}\n"
                 f"--- CÂU HỎI ---\n{compressed_q}\n\n"
