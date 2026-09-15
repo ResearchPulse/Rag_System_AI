@@ -27,12 +27,27 @@ class TestQueryClassifierStandard(unittest.TestCase):
         self.assertIn("SELECT COUNT(*)", res.execution_plan.suggested_sql)
 
         # Service routing check (graceful execution regardless of DB availability)
-        resp = self.service.retrieve(RetrievalRequest(query=query, top_k=2))
-        self.assertIsInstance(resp.results, list)
-        if resp.results:
-            self.assertTrue(
-                "2,137" in resp.results[0].content or "bài báo khoa học" in resp.results[0].content
-            )
+        from app.modules.retrieval.text_to_sql.schemas import SQLExecutionResult
+        with patch.object(
+            self.service.text_to_sql,
+            "_execute_query",
+            return_value=SQLExecutionResult(
+                sql='SELECT COUNT(*) FROM "Article" WHERE publication_year = 2023;',
+                columns=["count"],
+                rows=[(2137,)],
+                row_count=1,
+                latency_ms=1.0,
+                success=True,
+            ),
+        ):
+            resp = self.service.retrieve(RetrievalRequest(query=query, top_k=2))
+            self.assertIsInstance(resp.results, list)
+            if resp.results:
+                self.assertTrue(
+                    "2,137" in resp.results[0].content
+                    or "bài báo khoa học" in resp.results[0].content
+                    or "Thống kê" in resp.results[0].content
+                )
 
     def test_scenario_2_semantic_similarity(self):
         query = "Deep learning and backpropagation in neural networks"

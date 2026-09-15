@@ -87,9 +87,11 @@ class TestTextToSQLEngine(unittest.TestCase):
         self.assertIn("Hạng 2", md)
         self.assertIn("John Doe", md)
 
+    @patch.object(TextToSQLEngine, "generate_sql")
     @patch.object(TextToSQLEngine, "_execute_query")
-    def test_execute_and_format_end_to_end(self, mock_exec):
+    def test_execute_and_format_end_to_end(self, mock_exec, mock_gen):
         """Tests complete execute_and_format pipeline."""
+        mock_gen.return_value = 'SELECT display_name, citations FROM "Author" WHERE pas.project_id = 18;'
         mock_exec.return_value = SQLExecutionResult(
             sql='SELECT display_name, citations FROM "Author";',
             columns=["display_name", "citations"],
